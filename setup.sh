@@ -125,3 +125,13 @@ echo -e "{\$DOMAIN} {
 		    reverse_proxy studio:3000
 	    }
 }" >Caddyfile
+
+echo "🎉 Success! The script completed successfully."
+echo "👉 Next steps:"
+echo "1. Change into the Supabase Docker directory:"
+echo "   cd supabase/docker"
+echo "2. Start the services with Docker Compose:"
+echo "   docker compose up -d"
+echo "🚀 Your Supabase services should now be running!"
+
+echo -e "\n🌐 To access the dashboard over the internet, ensure your firewall allows traffic on ports 80 and 443\n"

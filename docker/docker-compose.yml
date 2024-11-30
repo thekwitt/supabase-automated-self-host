@@ -12,7 +12,7 @@ services:
     image: caddy:2.8.4
     restart: unless-stopped
     environment:
-      DOMAIN: ${DOMAIN:?error}
+      DOMAIN: ${SUPABASE_PUBLIC_URL:?error}
     ports:
       - 80:80
       - 443:443

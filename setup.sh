@@ -74,10 +74,10 @@ fi
 
 directory="supabase"
 
-if [[ -d "$directory" ]]; then
+if [ -d "$directory" ]; then
     info_log "$directory directory present, skipping git clone"
 else
-    git clone https://github.com/singh-inder/supabase-self-host "$directory"
+    git clone https://github.com/singh-inder/supabase-automated-self-host "$directory"
 fi
 
 if ! cd "$directory"/docker; then
@@ -85,7 +85,7 @@ if ! cd "$directory"/docker; then
     exit 1
 fi
 
-if [[ ! -f ".env.example" ]]; then
+if [ ! -f ".env.example" ]; then
     error_log ".env.example file not found. Exiting!"
     exit 1
 fi
@@ -115,10 +115,31 @@ while [[ -z "$dashboardPassword" || "$dashboardPassword" != "$dashboardConfirmPa
     read -s -rp "$(format_prompt "Confirm password:") " dashboardConfirmPassword
     echo
 
-    if [[ "$dashboardPassword" != "$dashboardConfirmPassword" ]]; then
+    if [ "$dashboardPassword" != "$dashboardConfirmPassword" ]; then
         echo -e "Password mismatch. Please try again!\n"
     fi
 done
+
+autoConfirm=""
+
+while true; do
+    read -rp "$(format_prompt "Do you want to send confirmation emails to register users? If yes, you'll have to setup your own SMTP server [y/n]:") " autoConfirm
+    case $autoConfirm in
+    [yY] | [yY][eE][sS])
+        autoConfirm="false"
+        echo
+        break
+        ;;
+    [nN] | [nN][oO])
+        autoConfirm="true"
+        echo
+        break
+        ;;
+    *) echo -e "${RED}ERROR: Please answer yes or no${NO_COLOR}\n" ;;
+    esac
+done
+
+info_log "Finishing..."
 
 # https://www.baeldung.com/linux/bcrypt-hash#using-htpasswd
 # -b option is for running htpasswd in batch mode, that is, it gets the password from the command line. If we don’t use the -b option, htpasswd prompts us to enter the password, and the typed password isn’t visible on the command line.
@@ -188,7 +209,8 @@ sed -e "s|POSTGRES_PASSWORD.*|POSTGRES_PASSWORD=$(openssl rand -hex 16)|" \
     -e "s|ANON_KEY.*|ANON_KEY=$anon_token|" \
     -e "s|SERVICE_ROLE_KEY.*|SERVICE_ROLE_KEY=$service_role_token|" \
     -e "s|API_EXTERNAL_URL.*|API_EXTERNAL_URL=$domain/api|" \
-    -e "s|SUPABASE_PUBLIC_URL.*|SUPABASE_PUBLIC_URL=$domain|" ".env.example" >.env
+    -e "s|SUPABASE_PUBLIC_URL.*|SUPABASE_PUBLIC_URL=$domain|" \
+    -e "s|ENABLE_EMAIL_AUTOCONFIRM.*|ENABLE_EMAIL_AUTOCONFIRM=$autoConfirm|" .env.example >.env
 
 echo -e "{\$DOMAIN} {
         @api path /rest/v1/* /auth/v1/* /realtime/v1/* /storage/v1/* /api*
@@ -208,7 +230,7 @@ echo -e "{\$DOMAIN} {
 
 unset dashboardPassword dashboardConfirmPassword
 
-echo "🎉 Success! The script completed successfully."
+echo -e "\n🎉 Success! The script completed successfully."
 echo "👉 Next steps:"
 echo "1. Change into the Supabase Docker directory:"
 echo "   cd supabase/docker"

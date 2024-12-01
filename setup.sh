@@ -1,50 +1,130 @@
 #!/bin/bash
 
+NO_COLOR=''
+RED=''
+CYAN=''
+
+# Check if terminal supports colors https://unix.stackexchange.com/a/10065/642181
+if [ -t 1 ]; then
+    total_colors=$(tput colors)
+    if [[ -n "$total_colors" && $total_colors -ge 8 ]]; then
+        # https://stackoverflow.com/a/28938235/18954618
+        NO_COLOR='\033[0m'
+        RED='\033[0;31m'
+        CYAN='\033[0;36m'
+    fi
+fi
+
+error_log() {
+    echo -e "${RED}ERROR: $1${NO_COLOR}"
+}
+info_log() {
+    echo -e "${CYAN}INFO: $1${NO_COLOR}"
+}
+
 # https://stackoverflow.com/a/18216122/18954618
 if [ "$EUID" -ne 0 ]; then
-    echo "Please run this script as root user"
+    error_log "Please run this script as root user"
     exit 1
 fi
 
-apt update && apt upgrade -y && apt install -y apache2-utils jq openssl git
+packages=(curl apache2-utils jq openssl git)
 
-echo "Setting up docker"
+# https://unix.stackexchange.com/a/571192/642181
+if [ -x "$(command -v apt-get)" ]; then
+    apt-get update && apt-get install -y "${packages[@]}"
+
+elif [ -x "$(command -v apk)" ]; then
+    apk update && apk add --no-cache "${packages[@]}"
+
+elif [ -x "$(command -v dnf)" ]; then
+    dnf makecache && dnf install -y "${packages[@]}"
+
+elif [ -x "$(command -v zypper)" ]; then
+    zypper refresh && zypper install "${packages[@]}"
+
+elif [ -x "$(command -v pacman)" ]; then
+    pacman -Syu --noconfirm "${packages[@]}"
+
+elif [ -x "$(command -v pkg)" ]; then
+    pkg update && pkg install -y "${packages[@]}"
+
+else
+    # diff between array expansion with "@" and "*" https://linuxsimply.com/bash-scripting-tutorial/expansion/array-expansion/
+    error_log "Failed to install packages: Package manager not found. You must manually install: ${packages[*]}" >&2
+    exit 1
+fi
+
+if [ $? -ne 0 ]; then
+    error_log "Failed to install packages. You must manually install: ${packages[*]}" >&2
+    exit 1
+fi
+
+info_log "Setting up docker"
 
 # https://stackoverflow.com/a/677212
 if ! command -v /usr/bin/docker >/dev/null; then
-    curl -fsSL https://get.docker.com | sh
+    if ! curl -fsSL https://get.docker.com | sh; then
+        error_log "Docker installation failed. Exiting!" >&2
+        exit 1
+    fi
 else
-    echo "docker already installed. skipping installation"
+    info_log "docker already installed. skipping installation"
 fi
 
 directory="supabase"
 
 if [[ -d "$directory" ]]; then
-    echo "$directory directory present, skipping git clone"
+    info_log "$directory directory present, skipping git clone"
 else
     git clone https://github.com/singh-inder/supabase-self-host "$directory"
 fi
 
 if ! cd "$directory"/docker; then
-    echo "Unable to access $directory/docker directory"
+    error_log "Unable to access $directory/docker directory"
     exit 1
 fi
 
 if [[ ! -f ".env.example" ]]; then
-    echo ".env.example file not found. Exiting!"
+    error_log ".env.example file not found. Exiting!"
     exit 1
 fi
 
-read -rp "Enter your domain: " domain
+echo -e "---------------------------------------------------------------------------\n"
+
+format_prompt() {
+    echo -e "${CYAN}$1${NO_COLOR}"
+}
+
+domain=""
+while [ -z "$domain" ]; do
+    read -rp "$(format_prompt "Enter your domain:") " domain
+done
+
+dashboardUsername=""
+while [ -z "$dashboardUsername" ]; do
+    read -rp "$(format_prompt "Enter supabase dashboard username:") " dashboardUsername
+done
+
+dashboardPassword=""
+dashboardConfirmPassword=""
+
+while [[ -z "$dashboardPassword" || "$dashboardPassword" != "$dashboardConfirmPassword" ]]; do
+    read -s -rp "$(format_prompt "Enter supabase dashboard password(password is hidden):") " dashboardPassword
+    echo
+    read -s -rp "$(format_prompt "Confirm password:") " dashboardConfirmPassword
+    echo
+
+    if [[ "$dashboardPassword" != "$dashboardConfirmPassword" ]]; then
+        echo -e "Password mismatch. Please try again!\n"
+    fi
+done
 
 # https://www.baeldung.com/linux/bcrypt-hash#using-htpasswd
 # -b option is for running htpasswd in batch mode, that is, it gets the password from the command line. If we don’t use the -b option, htpasswd prompts us to enter the password, and the typed password isn’t visible on the command line.
 # -B option specifies that bcrypt should be used for hashing passwords. There are also other options for hashing. For example, the -m option uses MD5, while the -s option uses SHA
 # -n option shows the hashed password on the standard output.
 # -C option can be used together with the -B option. It sets the bcrypt “cost”, or the time used by the bcrypt algorithm to compute the hash. htpasswd accepts values within 4 and 17 inclusively and the default value is 5
-read -rp "Enter supabase dashboard username: " dashboardUsername
-read -rp "Enter supabase dashboard password: " dashboardPassword
-
 dashboardPassword=$(htpasswd -bnBC 12 "" "$dashboardPassword" | cut -d : -f 2)
 
 # https://www.willhaley.com/blog/generate-jwt-with-bash/
@@ -125,6 +205,8 @@ echo -e "{\$DOMAIN} {
 		    reverse_proxy studio:3000
 	    }
 }" >Caddyfile
+
+unset dashboardPassword dashboardConfirmPassword
 
 echo "🎉 Success! The script completed successfully."
 echo "👉 Next steps:"

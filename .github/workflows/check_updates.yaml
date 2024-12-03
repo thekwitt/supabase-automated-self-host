@@ -25,4 +25,4 @@ jobs:
       - name: execute py script
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-        run: python update/check_for_updates.py
+        run: python update/check_updates.py

@@ -2,6 +2,7 @@
 name: Check for supabase docker image updates
 
 on:
+  workflow_dispatch:
   schedule:
     - cron: 0 5 * * 2 # https://crontab.guru/#0_5_*_*_2
 

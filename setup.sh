@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -euo pipefail
+
 NO_COLOR=''
 RED=''
 CYAN=''
@@ -30,6 +32,7 @@ fi
 
 packages=(curl apache2-utils jq openssl git)
 
+# set -e doesn't work if any command is part of an if statement. package installation errors have to be checked https://stackoverflow.com/a/821419/18954618
 # https://unix.stackexchange.com/a/571192/642181
 if [ -x "$(command -v apt-get)" ]; then
     apt-get update && apt-get install -y "${packages[@]}"
@@ -51,33 +54,35 @@ elif [ -x "$(command -v pkg)" ]; then
 
 else
     # diff between array expansion with "@" and "*" https://linuxsimply.com/bash-scripting-tutorial/expansion/array-expansion/
-    error_log "Failed to install packages: Package manager not found. You must manually install: ${packages[*]}" >&2
+    error_log "Failed to install packages: Package manager not found. You must manually install: ${packages[*]}"
     exit 1
 fi
 
 if [ $? -ne 0 ]; then
-    error_log "Failed to install packages. You must manually install: ${packages[*]}" >&2
+    error_log "Failed to install packages. You must manually install: ${packages[*]}"
     exit 1
 fi
 
-info_log "Setting up docker"
-
 # https://stackoverflow.com/a/677212
 if ! command -v /usr/bin/docker >/dev/null; then
+    info_log "Setting up docker"
+
     if ! curl -fsSL https://get.docker.com | sh; then
-        error_log "Docker installation failed. Exiting!" >&2
+        error_log "Docker installation failed. Exiting!"
         exit 1
     fi
 else
     info_log "docker already installed. skipping installation"
 fi
 
-directory="supabase"
+githubAc="https://github.com/singh-inder"
+repoUrl="$githubAc/supabase-automated-self-host"
+directory="$(basename "$repoUrl")"
 
 if [ -d "$directory" ]; then
     info_log "$directory directory present, skipping git clone"
 else
-    git clone https://github.com/singh-inder/supabase-automated-self-host "$directory"
+    git clone "$repoUrl" "$directory"
 fi
 
 if ! cd "$directory"/docker; then
@@ -90,6 +95,34 @@ if [ ! -f ".env.example" ]; then
     exit 1
 fi
 
+detect_arch() {
+    case $(uname -m) in
+    x86_64) echo "amd64" ;;
+    aarch64) echo "arm64" ;;
+    armv7l) echo "arm" ;;
+    i686 | i386) echo "386" ;;
+    *)
+        echo "unsupported cpu architecture"
+        exit 1
+        ;;
+    esac
+}
+
+#https://stackoverflow.com/a/18434831/18954618
+detect_os() {
+    case $(uname | tr '[:upper:]' '[:lower:]') in
+    linux*) echo "linux" ;;
+    darwin*) echo "darwin" ;;
+    *) echo "err" ;;
+    esac
+}
+
+os="$(detect_os)"
+arch="$(detect_arch)"
+
+info_log "Downloading url-parser from $githubAc/url-parser and saving in /usr/local/bin"
+wget "$githubAc"/url-parser/releases/latest/download/url-parser-"$os"-"$arch" -O /usr/local/bin/url-parser &>/dev/null &&
+    chmod +x /usr/local/bin/url-parser &>/dev/null
 echo -e "---------------------------------------------------------------------------\n"
 
 format_prompt() {
@@ -99,6 +132,14 @@ format_prompt() {
 domain=""
 while [ -z "$domain" ]; do
     read -rp "$(format_prompt "Enter your domain:") " domain
+
+    protocol="$(url-parser --url "$domain" --get scheme)"
+
+    # https://www.shellcheck.net/wiki/SC2235
+    if [ -z "$protocol" ] || { [ "$protocol" != "http" ] && [ "$protocol" != "https" ]; }; then
+        error_log "Url protocol must be http or https\n"
+        domain=""
+    fi
 done
 
 dashboardUsername=""
@@ -212,7 +253,11 @@ sed -e "s|POSTGRES_PASSWORD.*|POSTGRES_PASSWORD=$(openssl rand -hex 16)|" \
     -e "s|SUPABASE_PUBLIC_URL.*|SUPABASE_PUBLIC_URL=$domain|" \
     -e "s|ENABLE_EMAIL_AUTOCONFIRM.*|ENABLE_EMAIL_AUTOCONFIRM=$autoConfirm|" .env.example >.env
 
+echo -e "\nCADDY_AUTH_USERNAME=$dashboardUsername\nCADDY_AUTH_PASSWORD='$dashboardPassword'" >>.env
+
+# https://stackoverflow.com/a/3953712/18954618
 echo -e "{\$DOMAIN} {
+        $([ "$protocol" = "http" ] && echo "tls internal")
         @api path /rest/v1/* /auth/v1/* /realtime/v1/* /storage/v1/* /api*
 
         handle @api {
@@ -221,7 +266,7 @@ echo -e "{\$DOMAIN} {
 
        	handle {
 	    	basic_auth {
-			    $dashboardUsername $dashboardPassword
+			    \${CADDY_AUTH_USERNAME} \${CADDY_AUTH_PASSWORD}
 		    }
 
 		    reverse_proxy studio:3000

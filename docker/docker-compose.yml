@@ -13,6 +13,8 @@ services:
     restart: unless-stopped
     environment:
       DOMAIN: ${SUPABASE_PUBLIC_URL:?error}
+      CADDY_AUTH_USERNAME: ${CADDY_AUTH_USERNAME?:error}
+      CADDY_AUTH_PASSWORD: ${CADDY_AUTH_PASSWORD?:error}
     ports:
       - 80:80
       - 443:443

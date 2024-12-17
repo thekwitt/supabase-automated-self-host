@@ -2,6 +2,8 @@
 
 set -euo pipefail
 
+: "${CI:="false"}"
+
 NO_COLOR=''
 RED=''
 CYAN=''
@@ -27,6 +29,38 @@ info_log() {
 # https://stackoverflow.com/a/18216122/18954618
 if [ "$EUID" -ne 0 ]; then
     error_log "Please run this script as root user"
+    exit 1
+fi
+
+detect_arch() {
+    case $(uname -m) in
+    x86_64) echo "amd64" ;;
+    aarch64) echo "arm64" ;;
+    armv7l) echo "arm" ;;
+    i686 | i386) echo "386" ;;
+    *) echo "err" ;;
+    esac
+}
+
+#https://stackoverflow.com/a/18434831/18954618
+detect_os() {
+    case $(uname | tr '[:upper:]' '[:lower:]') in
+    linux*) echo "linux" ;;
+    darwin*) echo "darwin" ;;
+    *) echo "err" ;;
+    esac
+}
+
+os="$(detect_os)"
+arch="$(detect_arch)"
+
+if [[ "$os" == "err" ]]; then
+    error_log "This script only supports linux and macos"
+    exit 1
+fi
+
+if [[ "$arch" == "err" ]]; then
+    error_log "Unsupported cpu architecture"
     exit 1
 fi
 
@@ -95,31 +129,6 @@ if [ ! -f ".env.example" ]; then
     exit 1
 fi
 
-detect_arch() {
-    case $(uname -m) in
-    x86_64) echo "amd64" ;;
-    aarch64) echo "arm64" ;;
-    armv7l) echo "arm" ;;
-    i686 | i386) echo "386" ;;
-    *)
-        echo "unsupported cpu architecture"
-        exit 1
-        ;;
-    esac
-}
-
-#https://stackoverflow.com/a/18434831/18954618
-detect_os() {
-    case $(uname | tr '[:upper:]' '[:lower:]') in
-    linux*) echo "linux" ;;
-    darwin*) echo "darwin" ;;
-    *) echo "err" ;;
-    esac
-}
-
-os="$(detect_os)"
-arch="$(detect_arch)"
-
 info_log "Downloading url-parser from $githubAc/url-parser and saving in /usr/local/bin"
 wget "$githubAc"/url-parser/releases/latest/download/url-parser-"$os"-"$arch" -O /usr/local/bin/url-parser &>/dev/null &&
     chmod +x /usr/local/bin/url-parser &>/dev/null
@@ -131,11 +140,14 @@ format_prompt() {
 
 domain=""
 while [ -z "$domain" ]; do
-    read -rp "$(format_prompt "Enter your domain:") " domain
+    if [ "$CI" != "true" ]; then
+        read -rp "$(format_prompt "Enter your domain:") " domain
+    else
+        domain="http://supabase.example.com"
+    fi
 
     protocol="$(url-parser --url "$domain" --get scheme)"
 
-    # https://www.shellcheck.net/wiki/SC2235
     if [ -z "$protocol" ] || { [ "$protocol" != "http" ] && [ "$protocol" != "https" ]; }; then
         error_log "Url protocol must be http or https\n"
         domain=""
@@ -143,12 +155,19 @@ while [ -z "$domain" ]; do
 done
 
 dashboardUsername=""
+if [[ "$CI" == "true" ]]; then dashboardUsername="inder"; fi
+
 while [ -z "$dashboardUsername" ]; do
     read -rp "$(format_prompt "Enter supabase dashboard username:") " dashboardUsername
 done
 
 dashboardPassword=""
 dashboardConfirmPassword=""
+
+if [[ "$CI" == "true" ]]; then
+    dashboardPassword="password"
+    dashboardConfirmPassword="password"
+fi
 
 while [[ -z "$dashboardPassword" || "$dashboardPassword" != "$dashboardConfirmPassword" ]]; do
     read -s -rp "$(format_prompt "Enter supabase dashboard password(password is hidden):") " dashboardPassword
@@ -162,19 +181,19 @@ while [[ -z "$dashboardPassword" || "$dashboardPassword" != "$dashboardConfirmPa
 done
 
 autoConfirm=""
+if [[ "$CI" == "true" ]]; then autoConfirm="false"; fi
 
-while true; do
+while [ -z "$autoConfirm" ]; do
     read -rp "$(format_prompt "Do you want to send confirmation emails to register users? If yes, you'll have to setup your own SMTP server [y/n]:") " autoConfirm
-    case $autoConfirm in
-    [yY] | [yY][eE][sS])
+    # converts input to lowercase
+    case "${autoConfirm,,}" in
+    y | yes)
         autoConfirm="false"
         echo
-        break
         ;;
-    [nN] | [nN][oO])
+    n | no)
         autoConfirm="true"
         echo
-        break
         ;;
     *) echo -e "${RED}ERROR: Please answer yes or no${NO_COLOR}\n" ;;
     esac

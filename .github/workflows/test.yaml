@@ -1,0 +1,38 @@
+name: Test supabase docker containers
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "docker/**/*"
+      - setup.sh
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: execute setup script
+        shell: bash
+        env:
+          CI: "true"
+        # after checkout, pwd is the root of the repo thats why cd ../
+        # When executing script with sudo, by default sudo doesn't pass env vars to script. -E flag solves that
+        run: |
+          set -ex
+          mv setup.sh ../setup.sh
+          cd ../
+          chmod +x setup.sh
+          sudo -E ./setup.sh
+          cd ${{github.event.repository.name}}/docker && docker compose up -d
+
+      # docker compose up --wait was failing as some containers were healthy on second attempt. This action retries
+      - name: Wait for containers to be healthy
+        uses: jaracogmbh/docker-compose-health-check-action@v1.0.0
+        with:
+          max-retries: 30
+          retry-interval: 10
+          compose-file: "docker/docker-compose.yml"
+          skip-exited: "true"

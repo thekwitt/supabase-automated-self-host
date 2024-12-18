@@ -10,7 +10,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-
+    env:
+      REPO: ${{github.event.repository.name}}
     steps:
       - uses: actions/checkout@v4
 
@@ -26,7 +27,7 @@ jobs:
           cd ../
           chmod +x setup.sh
           sudo -E ./setup.sh
-          cd ${{github.event.repository.name}}/docker && docker compose up -d
+          cd "$REPO"/docker && docker compose up -d
 
       # docker compose up --wait was failing as some containers were healthy on second attempt. This action retries
       - name: Wait for containers to be healthy
@@ -36,3 +37,18 @@ jobs:
           retry-interval: 10
           compose-file: "docker/docker-compose.yml"
           skip-exited: "true"
+
+      - name: Generate tar
+        shell: bash
+        run: |
+          set -ex
+          cd docker
+          docker compose kill &> /dev/null
+          cd ../../
+          sudo tar --exclude "$REPO/docker/volumes/db/data" --exclude "$REPO/docker/volumes/caddy" -czvf ~/final.tar.gz "$REPO" > /dev/null
+
+      - name: Upload final
+        uses: actions/upload-artifact@v4
+        with:
+          name: final
+          path: ~/final.tar.gz

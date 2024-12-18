@@ -64,6 +64,9 @@ if [[ "$arch" == "err" ]]; then
     exit 1
 fi
 
+with_authelia=false
+if [[ "$#" -gt 0 && "$1" == "--with_authelia" ]]; then with_authelia=true; fi
+
 packages=(curl apache2-utils jq openssl git)
 
 # set -e doesn't work if any command is part of an if statement. package installation errors have to be checked https://stackoverflow.com/a/821419/18954618
@@ -129,9 +132,20 @@ if [ ! -f ".env.example" ]; then
     exit 1
 fi
 
-info_log "Downloading url-parser from $githubAc/url-parser and saving in /usr/local/bin"
-wget "$githubAc"/url-parser/releases/latest/download/url-parser-"$os"-"$arch" -O /usr/local/bin/url-parser &>/dev/null &&
-    chmod +x /usr/local/bin/url-parser &>/dev/null
+downloadLocation="/usr/local/bin"
+
+if [ ! -x "$downloadLocation"/url-parser ]; then
+    info_log "Downloading url-parser from $githubAc/url-parser and saving in $downloadLocation"
+    wget "$githubAc"/url-parser/releases/download/v1.1.0/url-parser-"$os"-"$arch" -O "$downloadLocation"/url-parser &>/dev/null &&
+        chmod +x "$downloadLocation"/url-parser &>/dev/null
+fi
+
+if [ ! -x "$downloadLocation"/yq ]; then
+    info_log "Downloading yq from https://github.com/mikefarah/yq and saving in $downloadLocation"
+    wget https://github.com/mikefarah/yq/releases/download/v4.4.6/yq_"$os"_"$arch" -O "$downloadLocation"/yq &>/dev/null &&
+        chmod +x "$downloadLocation"/yq &>/dev/null
+fi
+
 echo -e "---------------------------------------------------------------------------\n"
 
 format_prompt() {
@@ -140,43 +154,57 @@ format_prompt() {
 
 domain=""
 while [ -z "$domain" ]; do
-    if [ "$CI" != "true" ]; then
-        read -rp "$(format_prompt "Enter your domain:") " domain
-    else
+    if [ "$CI" == "true" ]; then
         domain="http://supabase.example.com"
+    else
+        read -rp "$(format_prompt "Enter your domain:") " domain
     fi
 
     protocol="$(url-parser --url "$domain" --get scheme)"
 
-    if [ -z "$protocol" ] || { [ "$protocol" != "http" ] && [ "$protocol" != "https" ]; }; then
+    if [[ "$with_authelia" == true ]]; then
+        # cookies.authelia_url needs to be https https://www.authelia.com/configuration/session/introduction/#authelia_url
+        if [[ "$protocol" != "https" ]]; then
+            error_log "As you've enabled --with-authelia flag, url protocol needs to https"
+            domain=""
+        else
+            registered_domain="$(url-parser --url "$domain" --get registeredDomain)"
+
+            if [ -z "$registered_domain" ]; then
+                error_log "Error extracting root domain\n"
+                domain=""
+            fi
+        fi
+
+    elif [[ "$protocol" != "http" && "$protocol" != "https" ]]; then
         error_log "Url protocol must be http or https\n"
         domain=""
     fi
 done
 
-dashboardUsername=""
-if [[ "$CI" == "true" ]]; then dashboardUsername="inder"; fi
+username=""
+if [[ "$CI" == "true" ]]; then username="inder"; fi
 
-while [ -z "$dashboardUsername" ]; do
-    read -rp "$(format_prompt "Enter supabase dashboard username:") " dashboardUsername
+while [ -z "$username" ]; do
+    read -rp "$(format_prompt "Enter username:") " username
 done
 
-dashboardPassword=""
-dashboardConfirmPassword=""
+password=""
+confirmPassword=""
 
 if [[ "$CI" == "true" ]]; then
-    dashboardPassword="password"
-    dashboardConfirmPassword="password"
+    password="password"
+    confirmPassword="password"
 fi
 
-while [[ -z "$dashboardPassword" || "$dashboardPassword" != "$dashboardConfirmPassword" ]]; do
-    read -s -rp "$(format_prompt "Enter supabase dashboard password(password is hidden):") " dashboardPassword
+while [[ -z "$password" || "$password" != "$confirmPassword" ]]; do
+    read -s -rp "$(format_prompt "Enter password(password is hidden):") " password
     echo
-    read -s -rp "$(format_prompt "Confirm password:") " dashboardConfirmPassword
+    read -s -rp "$(format_prompt "Confirm password:") " confirmPassword
     echo
 
-    if [ "$dashboardPassword" != "$dashboardConfirmPassword" ]; then
-        echo -e "Password mismatch. Please try again!\n"
+    if [[ "$password" != "$confirmPassword" ]]; then
+        error_log "Password mismatch. Please try again!\n"
     fi
 done
 
@@ -206,7 +234,7 @@ info_log "Finishing..."
 # -B option specifies that bcrypt should be used for hashing passwords. There are also other options for hashing. For example, the -m option uses MD5, while the -s option uses SHA
 # -n option shows the hashed password on the standard output.
 # -C option can be used together with the -B option. It sets the bcrypt “cost”, or the time used by the bcrypt algorithm to compute the hash. htpasswd accepts values within 4 and 17 inclusively and the default value is 5
-dashboardPassword=$(htpasswd -bnBC 12 "" "$dashboardPassword" | cut -d : -f 2)
+password=$(htpasswd -bnBC 12 "" "$password" | cut -d : -f 2)
 
 # https://www.willhaley.com/blog/generate-jwt-with-bash/
 
@@ -272,7 +300,21 @@ sed -e "s|POSTGRES_PASSWORD.*|POSTGRES_PASSWORD=$(openssl rand -hex 16)|" \
     -e "s|SUPABASE_PUBLIC_URL.*|SUPABASE_PUBLIC_URL=$domain|" \
     -e "s|ENABLE_EMAIL_AUTOCONFIRM.*|ENABLE_EMAIL_AUTOCONFIRM=$autoConfirm|" .env.example >.env
 
-echo -e "\nCADDY_AUTH_USERNAME=$dashboardUsername\nCADDY_AUTH_PASSWORD='$dashboardPassword'" >>.env
+compose_file="docker-compose.yml"
+
+if [[ "$with_authelia" == false ]]; then
+    echo -e "\nCADDY_AUTH_USERNAME=$username\nCADDY_AUTH_PASSWORD='$password'" >>.env
+
+    # https://github.com/mikefarah/yq/issues/465#issuecomment-2265381565
+    sed -i '/^\r\{0,1\}$/s// #BLANK_LINE/' "$compose_file"
+
+    # shellcheck disable=SC2016
+    yq -i '.services.caddy.environment.CADDY_AUTH_USERNAME = "${CADDY_AUTH_USERNAME?:error}" |
+           .services.caddy.environment.CADDY_AUTH_PASSWORD = "${CADDY_AUTH_PASSWORD?:error}"
+    ' "$compose_file"
+
+    sed -i "s/ *#BLANK_LINE//g" "$compose_file"
+fi
 
 # https://stackoverflow.com/a/3953712/18954618
 echo -e "{\$DOMAIN} {
@@ -284,15 +326,15 @@ echo -e "{\$DOMAIN} {
 	    }   
 
        	handle {
-	    	basic_auth {
+            $([[ "$with_authelia" == false ]] && echo "basic_auth {
 			    \${CADDY_AUTH_USERNAME} \${CADDY_AUTH_PASSWORD}
-		    }
+		    }")	    	
 
 		    reverse_proxy studio:3000
 	    }
 }" >Caddyfile
 
-unset dashboardPassword dashboardConfirmPassword
+unset password confirmPassword
 
 echo -e "\n🎉 Success! The script completed successfully."
 echo "👉 Next steps:"

@@ -1,0 +1,2 @@
+docker/authelia/config/configuration.yml
+docker/volumes/api/kong.yml

@@ -7,48 +7,29 @@ on:
       - "docker/**/*"
       - setup.sh
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    env:
-      REPO: ${{github.event.repository.name}}
-    steps:
-      - uses: actions/checkout@v4
+  build-basic-auth:
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+    uses: "./.github/workflows/reusable_exec.yaml"
+    with:
+      runs_on: ${{matrix.os}}
+      with_authelia: false
+      artifact_name: "final"
+      repo: ${{github.event.repository.name}}
 
-      - name: execute setup script
-        shell: bash
-        env:
-          CI: "true"
-        # after checkout, pwd is the root of the repo thats why cd ../
-        # When executing script with sudo, by default sudo doesn't pass env vars to script. -E flag solves that
-        run: |
-          set -ex
-          mv setup.sh ../setup.sh
-          cd ../
-          chmod +x setup.sh
-          sudo -E ./setup.sh
-          cd "$REPO"/docker && docker compose up -d
-
-      # docker compose up --wait was failing as some containers were healthy on second attempt. This action retries
-      - name: Wait for containers to be healthy
-        uses: jaracogmbh/docker-compose-health-check-action@v1.0.0
-        with:
-          max-retries: 30
-          retry-interval: 10
-          compose-file: "docker/docker-compose.yml"
-          skip-exited: "true"
-
-      - name: Generate tar
-        shell: bash
-        run: |
-          set -ex
-          cd docker
-          docker compose kill &> /dev/null
-          cd ../../
-          sudo tar --exclude "$REPO/docker/volumes/db/data" --exclude "$REPO/docker/volumes/caddy" -czvf ~/final.tar.gz "$REPO" > /dev/null
-
-      - name: Upload final
-        uses: actions/upload-artifact@v4
-        with:
-          name: final
-          path: ~/final.tar.gz
+  build-with-authelia:
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+    uses: "./.github/workflows/reusable_exec.yaml"
+    with:
+      runs_on: ${{matrix.os}}
+      with_authelia: true
+      artifact_name: "final_with_authelia"
+      repo: ${{github.event.repository.name}}

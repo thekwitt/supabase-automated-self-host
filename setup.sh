@@ -65,7 +65,7 @@ if [[ "$arch" == "err" ]]; then
 fi
 
 with_authelia=false
-if [[ "$#" -gt 0 && "$1" == "--with_authelia" ]]; then with_authelia=true; fi
+if [[ "$#" -gt 0 && "$1" == "--with-authelia" ]]; then with_authelia=true; fi
 
 packages=(curl apache2-utils jq openssl git)
 
@@ -155,7 +155,7 @@ format_prompt() {
 domain=""
 while [ -z "$domain" ]; do
     if [ "$CI" == "true" ]; then
-        domain="http://supabase.example.com"
+        domain="https://supabase.example.com"
     else
         read -rp "$(format_prompt "Enter your domain:") " domain
     fi
@@ -187,6 +187,13 @@ if [[ "$CI" == "true" ]]; then username="inder"; fi
 
 while [ -z "$username" ]; do
     read -rp "$(format_prompt "Enter username:") " username
+
+    # https://stackoverflow.com/questions/18041761/bash-need-to-test-for-alphanumeric-string
+    if [[ ! "$username" =~ ^[a-zA-Z0-9]+$ ]]; then
+        error_log "Only alphabets and numbers are allowed"
+        username=""
+    fi
+    # read command automatically trims leading & trailing whitespace. No need to handle it separately
 done
 
 password=""
@@ -226,6 +233,38 @@ while [ -z "$autoConfirm" ]; do
     *) echo -e "${RED}ERROR: Please answer yes or no${NO_COLOR}\n" ;;
     esac
 done
+
+# If with_authelia, then additionally ask for email and display name
+if [[ "$with_authelia" == true ]]; then
+    email=""
+    display_name=""
+
+    if [[ "$CI" == true ]]; then
+        email="johndoe@gmail.com"
+        display_name="Inder Singh"
+    fi
+
+    while [ -z "$email" ]; do
+        read -rp "$(format_prompt "Enter your email:") " email
+
+        # split email string on @ symbol
+        IFS="@" read -r before_at after_at <<<"$email"
+
+        if [[ -z "$before_at" || -z "$after_at" ]]; then
+            error_log "Invalid email"
+            email=""
+        fi
+    done
+
+    while [ -z "$display_name" ]; do
+        read -rp "$(format_prompt "Enter Display Name:") " display_name
+
+        if [[ ! "$display_name" =~ ^[a-zA-Z0-9[:space:]]+$ ]]; then
+            error_log "Only alphabets, numbers and spaces are allowed"
+            display_name=""
+        fi
+    done
+fi
 
 info_log "Finishing..."
 
@@ -292,7 +331,11 @@ while [[ "${anon_token}" == *"__"* || "${service_role_token}" == *"__"* ]]; do
     service_role_token=$(gen_token "$service_role_payload")
 done
 
-sed -e "s|POSTGRES_PASSWORD.*|POSTGRES_PASSWORD=$(openssl rand -hex 16)|" \
+gen_hex() {
+    openssl rand -hex "$1"
+}
+
+sed -e "s|POSTGRES_PASSWORD.*|POSTGRES_PASSWORD=$(gen_hex 16)|" \
     -e "s|JWT_SECRET.*|JWT_SECRET=$jwt_secret|" \
     -e "s|ANON_KEY.*|ANON_KEY=$anon_token|" \
     -e "s|SERVICE_ROLE_KEY.*|SERVICE_ROLE_KEY=$service_role_token|" \
@@ -300,26 +343,91 @@ sed -e "s|POSTGRES_PASSWORD.*|POSTGRES_PASSWORD=$(openssl rand -hex 16)|" \
     -e "s|SUPABASE_PUBLIC_URL.*|SUPABASE_PUBLIC_URL=$domain|" \
     -e "s|ENABLE_EMAIL_AUTOCONFIRM.*|ENABLE_EMAIL_AUTOCONFIRM=$autoConfirm|" .env.example >.env
 
+format_yaml() {
+    local filepath="$1"
+    local yq_command="$2"
+
+    # https://github.com/mikefarah/yq/issues/465#issuecomment-2265381565
+    sed -i '/^\r\{0,1\}$/s// #BLANK_LINE/' "$filepath"
+
+    eval "$yq_command \"$filepath\""
+
+    sed -i "s/ *#BLANK_LINE//g" "$1"
+}
+
 compose_file="docker-compose.yml"
 
 if [[ "$with_authelia" == false ]]; then
     echo -e "\nCADDY_AUTH_USERNAME=$username\nCADDY_AUTH_PASSWORD='$password'" >>.env
 
-    # https://github.com/mikefarah/yq/issues/465#issuecomment-2265381565
-    sed -i '/^\r\{0,1\}$/s// #BLANK_LINE/' "$compose_file"
+    format_yaml "$compose_file" "yq -i '.services.caddy.environment.CADDY_AUTH_USERNAME = \"\${CADDY_AUTH_USERNAME?:error}\" |
+           .services.caddy.environment.CADDY_AUTH_PASSWORD = \"\${CADDY_AUTH_PASSWORD?:error}\"
+           '"
 
-    # shellcheck disable=SC2016
-    yq -i '.services.caddy.environment.CADDY_AUTH_USERNAME = "${CADDY_AUTH_USERNAME?:error}" |
-           .services.caddy.environment.CADDY_AUTH_PASSWORD = "${CADDY_AUTH_PASSWORD?:error}"
-    ' "$compose_file"
+else
+    # Dynamically update yaml path from env https://github.com/mikefarah/yq/discussions/1253
+    # https://mikefarah.gitbook.io/yq/operators/style
 
-    sed -i "s/ *#BLANK_LINE//g" "$compose_file"
+    # WRITE AUTHELIA users_database.yml file
+    # adding disabled=false after updating style to double so that every value except disabled is double quoted
+    yaml_path=".users.$username" displayName="$display_name" password="$password" email="$email" \
+        yq -n 'eval(strenv(yaml_path)).displayname = strenv(displayName) |
+               eval(strenv(yaml_path)).password = strenv(password) | 
+               eval(strenv(yaml_path)).email = strenv(email) | 
+               eval(strenv(yaml_path)).groups = ["admins","dev"] | 
+               .. style="double" | 
+               eval(strenv(yaml_path)).disabled = false' >./volumes/authelia/users_database.yml
+
+    # TODO: ASK FOR REDIS
+
+    host="$(url-parser --url "$domain" --get host)"
+    registered_domain="$(url-parser --url "$domain" --get registeredDomain)"
+
+    # UPDATE AUTHELIA CONFIGURATION FILE
+    host="$host" registered_domain="$registered_domain" authelia_url="$domain"/authenticate redirect_url="$domain" \
+        format_yaml "./volumes/authelia/configuration.yml" \
+        "yq -i '.access_control.rules[0].domain=strenv(host) | 
+            .session.cookies[0].domain=strenv(registered_domain) | 
+            .session.cookies[0].authelia_url=strenv(authelia_url) |
+            .session.cookies[0].default_redirection_url=strenv(redirect_url)'"
+
+    echo -e "\nAUTHELIA_SESSION_SECRET=$(gen_hex 32)\nAUTHELIA_STORAGE_ENCRYPTION_KEY=$(gen_hex 32)\nAUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET=$(gen_hex 32)" \
+        >>.env
+
+    # Update docker-compose.yml file
+    authelia_schema="authelia" format_yaml "$compose_file" "yq -i '.services.authelia.container_name = \"authelia\" |
+       .services.authelia.image = \"authelia/authelia:4.38\" |
+       .services.authelia.volumes = [\"./volumes/authelia:/config\"] |
+       .services.authelia.depends_on.db.condition = \"service_healthy\" |
+       .services.authelia.expose = [9091] |    
+       .services.authelia.restart = \"unless-stopped\" |    
+       .services.authelia.healthcheck.disable = false |
+       .services.authelia.environment = {
+         \"AUTHELIA_STORAGE_POSTGRES_ADDRESS\": \"tcp://db:5432\",
+         \"AUTHELIA_STORAGE_POSTGRES_USERNAME\": \"postgres\",
+         \"AUTHELIA_STORAGE_POSTGRES_PASSWORD\" : \"\${POSTGRES_PASSWORD}\",
+         \"AUTHELIA_STORAGE_POSTGRES_DATABASE\" : \"\${POSTGRES_DB}\",
+         \"AUTHELIA_STORAGE_POSTGRES_SCHEMA\" : strenv(authelia_schema),
+         \"AUTHELIA_SESSION_SECRET\": \"\${AUTHELIA_SESSION_SECRET:?error}\",
+         \"AUTHELIA_STORAGE_ENCRYPTION_KEY\": \"\${AUTHELIA_STORAGE_ENCRYPTION_KEY:?error}\",
+         \"AUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET\": \"\${AUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET:?error}\"
+       } |
+       
+       .services.db.environment.AUTHELIA_SCHEMA = strenv(authelia_schema) |
+       .services.db.volumes += \"./volumes/db/schema-authelia.sh:/docker-entrypoint-initdb.d/schema-authelia.sh\"
+       '"
 fi
 
 # https://stackoverflow.com/a/3953712/18954618
 echo -e "{\$DOMAIN} {
-        $([ "$protocol" = "http" ] && echo "tls internal")
+        $([[ "$CI" == "true" ]] && echo "tls internal")
         @api path /rest/v1/* /auth/v1/* /realtime/v1/* /storage/v1/* /api*
+
+        $([[ "$with_authelia" == true ]] && echo "@authelia path /authenticate /authenticate/*
+        handle @authelia {
+                reverse_proxy authelia:9091
+        }
+        ")
 
         handle @api {
 		    reverse_proxy @api kong:8000
@@ -327,8 +435,12 @@ echo -e "{\$DOMAIN} {
 
        	handle {
             $([[ "$with_authelia" == false ]] && echo "basic_auth {
-			    \${CADDY_AUTH_USERNAME} \${CADDY_AUTH_PASSWORD}
-		    }")	    	
+			    {\$CADDY_AUTH_USERNAME} {\$CADDY_AUTH_PASSWORD}
+		    }" || echo "forward_auth authelia:9091 {
+                        uri /api/authz/forward-auth
+
+                        copy_headers Remote-User Remote-Groups Remote-Name Remote-Email
+                }")	    	
 
 		    reverse_proxy studio:3000
 	    }

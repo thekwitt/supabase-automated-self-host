@@ -4,10 +4,12 @@ set -euo pipefail
 
 : "${CI:=false}"
 : "${WITH_REDIS:=false}"
+: "${SUDO_USER:=""}"
 
 NO_COLOR=''
 RED=''
 CYAN=''
+GREEN=''
 
 # Check if terminal supports colors https://unix.stackexchange.com/a/10065/642181
 if [ -t 1 ]; then
@@ -17,26 +19,24 @@ if [ -t 1 ]; then
         NO_COLOR='\033[0m'
         RED='\033[0;31m'
         CYAN='\033[0;36m'
+        GREEN='\033[0;32m'
     fi
 fi
 
-error_log() {
-    echo -e "${RED}ERROR: $1${NO_COLOR}"
-}
-info_log() {
-    echo -e "${CYAN}INFO: $1${NO_COLOR}"
+error_log() { echo -e "${RED}ERROR: $1${NO_COLOR}"; }
+info_log() { echo -e "${CYAN}INFO: $1${NO_COLOR}"; }
+error_exit() {
+    error_log "$*"
+    exit 1
 }
 
 # https://stackoverflow.com/a/18216122/18954618
-if [ "$EUID" -ne 0 ]; then
-    error_log "Please run this script as root user"
-    exit 1
-fi
+if [ "$EUID" -ne 0 ]; then error_exit "Please run this script as root user"; fi
 
 detect_arch() {
     case $(uname -m) in
     x86_64) echo "amd64" ;;
-    aarch64) echo "arm64" ;;
+    aarch64 | arm64) echo "arm64" ;;
     armv7l) echo "arm" ;;
     i686 | i386) echo "386" ;;
     *) echo "err" ;;
@@ -55,60 +55,49 @@ detect_os() {
 os="$(detect_os)"
 arch="$(detect_arch)"
 
-if [[ "$os" == "err" ]]; then
-    error_log "This script only supports linux and macos"
-    exit 1
-fi
-
-if [[ "$arch" == "err" ]]; then
-    error_log "Unsupported cpu architecture"
-    exit 1
-fi
+if [[ "$os" == "err" ]]; then error_exit "This script only supports linux and macos"; fi
+if [[ "$arch" == "err" ]]; then error_exit "Unsupported cpu architecture"; fi
 
 with_authelia=false
 if [[ "$#" -gt 0 && "$1" == "--with-authelia" ]]; then with_authelia=true; fi
 
-packages=(curl apache2-utils jq openssl git)
+packages=(curl wget jq openssl git)
 
 # set -e doesn't work if any command is part of an if statement. package installation errors have to be checked https://stackoverflow.com/a/821419/18954618
 # https://unix.stackexchange.com/a/571192/642181
 if [ -x "$(command -v apt-get)" ]; then
-    apt-get update && apt-get install -y "${packages[@]}"
+    apt-get update && apt-get install -y "${packages[@]}" apache2-utils
 
 elif [ -x "$(command -v apk)" ]; then
-    apk update && apk add --no-cache "${packages[@]}"
+    apk update && apk add --no-cache "${packages[@]}" apache2-utils
 
 elif [ -x "$(command -v dnf)" ]; then
-    dnf makecache && dnf install -y "${packages[@]}"
+    dnf makecache && dnf install -y "${packages[@]}" httpd-tools
 
 elif [ -x "$(command -v zypper)" ]; then
-    zypper refresh && zypper install "${packages[@]}"
+    zypper refresh && zypper install "${packages[@]}" apache2-utils
 
 elif [ -x "$(command -v pacman)" ]; then
-    pacman -Syu --noconfirm "${packages[@]}"
+    pacman -Syu --noconfirm "${packages[@]}" apache
 
 elif [ -x "$(command -v pkg)" ]; then
-    pkg update && pkg install -y "${packages[@]}"
+    pkg update && pkg install -y "${packages[@]}" apache24
 
+elif [[ -x "$(command -v brew)" && -n "$SUDO_USER" ]]; then
+    # brew doesn't allow installation with sudo privileges, thats why have to run script as user who initiated this script with sudo privileges
+    sudo -u "$SUDO_USER" brew install "${packages[@]}" httpd
 else
     # diff between array expansion with "@" and "*" https://linuxsimply.com/bash-scripting-tutorial/expansion/array-expansion/
-    error_log "Failed to install packages: Package manager not found. You must manually install: ${packages[*]}"
-    exit 1
+    error_exit "Failed to install packages. Package manager not found.\nSupported package managers: apt, apk, dnf, zypper, pacman, pkg, brew"
 fi
 
-if [ $? -ne 0 ]; then
-    error_log "Failed to install packages. You must manually install: ${packages[*]}"
-    exit 1
-fi
+if [ $? -ne 0 ]; then error_exit "Failed to install packages."; fi
 
 # https://stackoverflow.com/a/677212
 if ! command -v /usr/bin/docker >/dev/null; then
     info_log "Setting up docker"
 
-    if ! curl -fsSL https://get.docker.com | sh; then
-        error_log "Docker installation failed. Exiting!"
-        exit 1
-    fi
+    if ! curl -fsSL https://get.docker.com | sh; then error_exit "Docker installation failed. Exiting!"; fi
 else
     info_log "docker already installed. skipping installation"
 fi
@@ -123,35 +112,26 @@ else
     git clone "$repoUrl" "$directory"
 fi
 
-if ! cd "$directory"/docker; then
-    error_log "Unable to access $directory/docker directory"
-    exit 1
-fi
+if ! cd "$directory"/docker; then error_exit "Unable to access $directory/docker directory"; fi
+if [ ! -f ".env.example" ]; then error_exit ".env.example file not found. Exiting!"; fi
 
-if [ ! -f ".env.example" ]; then
-    error_log ".env.example file not found. Exiting!"
-    exit 1
-fi
-
+download_binary() { wget "$1" -O "$2" &>/dev/null && chmod +x "$2" &>/dev/null; }
 downloadLocation="/usr/local/bin"
 
 if [ ! -x "$downloadLocation"/url-parser ]; then
     info_log "Downloading url-parser from $githubAc/url-parser and saving in $downloadLocation"
-    wget "$githubAc"/url-parser/releases/download/v1.1.0/url-parser-"$os"-"$arch" -O "$downloadLocation"/url-parser &>/dev/null &&
-        chmod +x "$downloadLocation"/url-parser &>/dev/null
+    download_binary "$githubAc"/url-parser/releases/download/v1.1.0/url-parser-"$os"-"$arch" "$downloadLocation"/url-parser
 fi
 
 if [ ! -x "$downloadLocation"/yq ]; then
     info_log "Downloading yq from https://github.com/mikefarah/yq and saving in $downloadLocation"
-    wget https://github.com/mikefarah/yq/releases/download/v4.44.6/yq_"$os"_"$arch" -O "$downloadLocation"/yq &>/dev/null &&
-        chmod +x "$downloadLocation"/yq &>/dev/null
+    download_binary https://github.com/mikefarah/yq/releases/download/v4.44.6/yq_"$os"_"$arch" "$downloadLocation"/yq
 fi
 
 echo -e "---------------------------------------------------------------------------\n"
 
-format_prompt() {
-    echo -e "${CYAN}$1${NO_COLOR}"
-}
+format_prompt() { echo -e "${GREEN}$1${NO_COLOR}"; }
+
 confirmation_prompt() {
     # bash variable are passed by value.
     local variable_to_update_name="$1"
@@ -293,34 +273,18 @@ fi
 info_log "Finishing..."
 
 # https://www.baeldung.com/linux/bcrypt-hash#using-htpasswd
-# -b option is for running htpasswd in batch mode, that is, it gets the password from the command line. If we don’t use the -b option, htpasswd prompts us to enter the password, and the typed password isn’t visible on the command line.
-# -B option specifies that bcrypt should be used for hashing passwords. There are also other options for hashing. For example, the -m option uses MD5, while the -s option uses SHA
-# -n option shows the hashed password on the standard output.
-# -C option can be used together with the -B option. It sets the bcrypt “cost”, or the time used by the bcrypt algorithm to compute the hash. htpasswd accepts values within 4 and 17 inclusively and the default value is 5
 password=$(htpasswd -bnBC 12 "" "$password" | cut -d : -f 2)
 
-# https://www.willhaley.com/blog/generate-jwt-with-bash/
-
-jwt_secret=$(openssl rand -hex 20)
-
-base64_encode() {
-    declare input=${1:-$(</dev/stdin)}
-    # Use `tr` to URL encode the output from base64.
-    printf '%s' "${input}" | base64 | tr -d '=' | tr '/+' '_-' | tr -d '\n'
+gen_hex() {
+    openssl rand -hex "$1"
 }
 
-json() {
-    declare input=${1:-$(</dev/stdin)}
-    printf '%s' "${input}" | jq -c .
-}
+jwt_secret=$(gen_hex 20)
 
-hmacsha256_sign() {
-    declare input=${1:-$(</dev/stdin)}
-    printf '%s' "${input}" | openssl dgst -binary -sha256 -hmac "${jwt_secret}"
-}
+base64_url_encode() { openssl enc -base64 -A | tr '+/' '-_' | tr -d '='; }
 
 header='{"typ": "JWT","alg": "HS256"}'
-header_base64=$(echo "${header}" | json | base64_encode)
+header_base64=$(printf %s "$header" | base64_url_encode)
 # iat and exp for both tokens has to be same thats why initializing here
 iat=$(date +%s)
 exp=$(("$iat" + 5 * 3600 * 24 * 365)) # 5 years expiry
@@ -330,13 +294,13 @@ gen_token() {
         echo "$1" | jq --arg jq_iat "$iat" --arg jq_exp "$exp" '.iat=($jq_iat | tonumber) | .exp=($jq_exp | tonumber)'
     )
 
-    local payload_base64=$(echo "${payload}" | json | base64_encode)
+    local payload_base64=$(printf %s "$payload" | base64_url_encode)
 
-    local header_payload="${header_base64}.${payload_base64}"
+    local signed_content="${header_base64}.${payload_base64}"
 
-    local signature=$(echo "${header_payload}" | hmacsha256_sign | base64_encode)
+    local signature=$(printf %s "$signed_content" | openssl dgst -binary -sha256 -hmac "$jwt_secret" | base64_url_encode)
 
-    echo "${header_payload}.${signature}"
+    printf '%s' "${signed_content}.${signature}"
 }
 
 anon_payload='{"role": "anon", "iss": "supabase"}'
@@ -344,20 +308,6 @@ anon_token=$(gen_token "$anon_payload")
 
 service_role_payload='{"role": "service_role", "iss": "supabase"}'
 service_role_token=$(gen_token "$service_role_payload")
-
-# When double underscores ("__") are present in token, realtime analytics container remains unhealthy. Could be wrong about this behavior
-# my guess it maybe something to do with how env's are passed by docker compose
-# would say about 5/100 odds to have __ in token. for those 5 instances this loop:
-while [[ "${anon_token}" == *"__"* || "${service_role_token}" == *"__"* ]]; do
-    iat=$(date +%s)
-    exp=$(("$iat" + 5 * 3600 * 24 * 365)) # 5 years expiry
-    anon_token=$(gen_token "$anon_payload")
-    service_role_token=$(gen_token "$service_role_payload")
-done
-
-gen_hex() {
-    openssl rand -hex "$1"
-}
 
 sed -e "s|POSTGRES_PASSWORD.*|POSTGRES_PASSWORD=$(gen_hex 16)|" \
     -e "s|JWT_SECRET.*|JWT_SECRET=$jwt_secret|" \
@@ -485,6 +435,7 @@ echo -e "{\$DOMAIN} {
 }" >Caddyfile
 
 unset password confirmPassword
+if [ -n "$SUDO_USER" ]; then chown -R "$SUDO_USER": .; fi
 
 echo -e "\n🎉 Success! The script completed successfully."
 echo "👉 Next steps:"

@@ -33,6 +33,7 @@ jobs:
       REPO: ${{ inputs.repo }}
     steps:
       - uses: actions/checkout@v4
+
       - name: execute setup script
         # after checkout, pwd is the root of the repo thats why cd ../
         # When executing script with sudo, by default sudo doesn't pass env vars to script. -E flag solves that

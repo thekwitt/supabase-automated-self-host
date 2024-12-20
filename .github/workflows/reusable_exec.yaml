@@ -6,7 +6,12 @@ on:
         required: true
       with_authelia:
         type: boolean
-        required: true
+        required: false
+        default: false
+      with_authelia_and_redis:
+        type: boolean
+        required: false
+        default: false
       artifact_name:
         type: string
         required: true
@@ -23,7 +28,7 @@ jobs:
     timeout-minutes: 20
     runs-on: ${{ inputs.runs_on }}
     env:
-      CI: "true"
+      CI: true
       ARTIFACT: ${{ inputs.artifact_name }}
       REPO: ${{ inputs.repo }}
     steps:
@@ -37,9 +42,15 @@ jobs:
           cd ../
           chmod +x setup.sh
           params=()
-          [[ ${{inputs.with_authelia}} == true ]] && params+=(--with-authelia)
-          sudo -E ./setup.sh "${params[@]}"
-          cd "$REPO"/docker && docker compose up -d
+          with_authelia=${{inputs.with_authelia}}
+          with_authelia_and_redis=${{inputs.with_authelia_and_redis}}
+
+          [[ "$with_authelia" == true || "$with_authelia_and_redis" == true ]] && params+=(--with-authelia)
+
+          WITH_REDIS="$with_authelia_and_redis" sudo -E ./setup.sh "${params[@]}"
+
+      - name: Init containers
+        run: cd docker && docker compose up -d
 
       # docker compose up --wait was failing as some containers were healthy on second attempt. This action retries
       - name: Wait for containers to be healthy

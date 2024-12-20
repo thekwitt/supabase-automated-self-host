@@ -19,7 +19,6 @@ jobs:
     uses: "./.github/workflows/reusable_exec.yaml"
     with:
       runs_on: ${{matrix.os}}
-      with_authelia: false
       artifact_name: "final"
       repo: ${{github.event.repository.name}}
 
@@ -32,4 +31,15 @@ jobs:
       runs_on: ${{matrix.os}}
       with_authelia: true
       artifact_name: "final_with_authelia"
+      repo: ${{github.event.repository.name}}
+
+  build-with-authelia-and-redis:
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+    uses: "./.github/workflows/reusable_exec.yaml"
+    with:
+      runs_on: ${{matrix.os}}
+      with_authelia_and_redis: true
+      artifact_name: "final_with_authelia_and_redis"
       repo: ${{github.event.repository.name}}

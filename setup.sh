@@ -2,7 +2,8 @@
 
 set -euo pipefail
 
-: "${CI:="false"}"
+: "${CI:=false}"
+: "${WITH_REDIS:=false}"
 
 NO_COLOR=''
 RED=''
@@ -142,7 +143,7 @@ fi
 
 if [ ! -x "$downloadLocation"/yq ]; then
     info_log "Downloading yq from https://github.com/mikefarah/yq and saving in $downloadLocation"
-    wget https://github.com/mikefarah/yq/releases/download/v4.4.6/yq_"$os"_"$arch" -O "$downloadLocation"/yq &>/dev/null &&
+    wget https://github.com/mikefarah/yq/releases/download/v4.44.6/yq_"$os"_"$arch" -O "$downloadLocation"/yq &>/dev/null &&
         chmod +x "$downloadLocation"/yq &>/dev/null
 fi
 
@@ -151,10 +152,33 @@ echo -e "-----------------------------------------------------------------------
 format_prompt() {
     echo -e "${CYAN}$1${NO_COLOR}"
 }
+confirmation_prompt() {
+    # bash variable are passed by value.
+    local variable_to_update_name="$1"
+    local answer=""
+    read -rp "$(format_prompt "$2")" answer
+
+    # converts input to lowercase
+    case "${answer,,}" in
+    y | yes)
+        answer=true
+        ;;
+    n | no)
+        answer=false
+        ;;
+    *)
+        error_log "Please answer yes or no\n"
+        answer=""
+        ;;
+    esac
+
+    # Use eval to dynamically assign the new value to the variable passed by name. This indirectly updates the variable in the caller's scope.
+    if [ -n "$answer" ]; then eval "$variable_to_update_name=$answer"; fi
+}
 
 domain=""
 while [ -z "$domain" ]; do
-    if [ "$CI" == "true" ]; then
+    if [ "$CI" == true ]; then
         domain="https://supabase.example.com"
     else
         read -rp "$(format_prompt "Enter your domain:") " domain
@@ -183,7 +207,7 @@ while [ -z "$domain" ]; do
 done
 
 username=""
-if [[ "$CI" == "true" ]]; then username="inder"; fi
+if [[ "$CI" == true ]]; then username="inder"; fi
 
 while [ -z "$username" ]; do
     read -rp "$(format_prompt "Enter username:") " username
@@ -199,7 +223,7 @@ done
 password=""
 confirmPassword=""
 
-if [[ "$CI" == "true" ]]; then
+if [[ "$CI" == true ]]; then
     password="password"
     confirmPassword="password"
 fi
@@ -216,32 +240,28 @@ while [[ -z "$password" || "$password" != "$confirmPassword" ]]; do
 done
 
 autoConfirm=""
-if [[ "$CI" == "true" ]]; then autoConfirm="false"; fi
+if [[ "$CI" == true ]]; then autoConfirm="false"; fi
 
 while [ -z "$autoConfirm" ]; do
-    read -rp "$(format_prompt "Do you want to send confirmation emails to register users? If yes, you'll have to setup your own SMTP server [y/n]:") " autoConfirm
-    # converts input to lowercase
-    case "${autoConfirm,,}" in
-    y | yes)
+    confirmation_prompt autoConfirm "Do you want to send confirmation emails to register users? If yes, you'll have to setup your own SMTP server [y/n]: "
+    if [[ "$autoConfirm" == true ]]; then
         autoConfirm="false"
-        echo
-        ;;
-    n | no)
+    elif [[ "$autoConfirm" == false ]]; then
         autoConfirm="true"
-        echo
-        ;;
-    *) echo -e "${RED}ERROR: Please answer yes or no${NO_COLOR}\n" ;;
-    esac
+    fi
+
 done
 
 # If with_authelia, then additionally ask for email and display name
 if [[ "$with_authelia" == true ]]; then
     email=""
     display_name=""
+    setup_redis=""
 
     if [[ "$CI" == true ]]; then
         email="johndoe@gmail.com"
         display_name="Inder Singh"
+        if [[ "$WITH_REDIS" == true ]]; then setup_redis=true; fi
     fi
 
     while [ -z "$email" ]; do
@@ -263,6 +283,10 @@ if [[ "$with_authelia" == true ]]; then
             error_log "Only alphabets, numbers and spaces are allowed"
             display_name=""
         fi
+    done
+
+    while [[ "$CI" == false && -z "$setup_redis" ]]; do
+        confirmation_prompt setup_redis "Do you want to setup redis with authelia? [y/n]: "
     done
 fi
 
@@ -363,8 +387,8 @@ if [[ "$with_authelia" == false ]]; then
     format_yaml "$compose_file" "yq -i '.services.caddy.environment.CADDY_AUTH_USERNAME = \"\${CADDY_AUTH_USERNAME?:error}\" |
            .services.caddy.environment.CADDY_AUTH_PASSWORD = \"\${CADDY_AUTH_PASSWORD?:error}\"
            '"
-
 else
+    authelia_config_file="./volumes/authelia/configuration.yml"
     # Dynamically update yaml path from env https://github.com/mikefarah/yq/discussions/1253
     # https://mikefarah.gitbook.io/yq/operators/style
 
@@ -378,14 +402,12 @@ else
                .. style="double" | 
                eval(strenv(yaml_path)).disabled = false' >./volumes/authelia/users_database.yml
 
-    # TODO: ASK FOR REDIS
-
     host="$(url-parser --url "$domain" --get host)"
     registered_domain="$(url-parser --url "$domain" --get registeredDomain)"
 
     # UPDATE AUTHELIA CONFIGURATION FILE
     host="$host" registered_domain="$registered_domain" authelia_url="$domain"/authenticate redirect_url="$domain" \
-        format_yaml "./volumes/authelia/configuration.yml" \
+        format_yaml "$authelia_config_file" \
         "yq -i '.access_control.rules[0].domain=strenv(host) | 
             .session.cookies[0].domain=strenv(registered_domain) | 
             .session.cookies[0].authelia_url=strenv(authelia_url) |
@@ -416,11 +438,27 @@ else
        .services.db.environment.AUTHELIA_SCHEMA = strenv(authelia_schema) |
        .services.db.volumes += \"./volumes/db/schema-authelia.sh:/docker-entrypoint-initdb.d/schema-authelia.sh\"
        '"
+
+    if [[ "$setup_redis" == true ]]; then
+        format_yaml "$authelia_config_file" "yq -i '.session.redis.host=\"redis\" | .session.redis.port=6379'"
+
+        format_yaml "$compose_file" \
+            "yq -i '.services.redis.container_name=\"redis\" |
+                    .services.redis.image=\"redis:7.4\" |
+                    .services.redis.expose=[6379] |
+                    .services.redis.healthcheck={
+                    \"test\" : [\"CMD-SHELL\",\"redis-cli ping | grep PONG\"],
+                    \"timeout\" : \"5s\",
+                    \"interval\" : \"1s\",
+                    \"retries\" : 5
+                    } |
+                    .services.authelia.depends_on.redis.condition=\"service_healthy\"'"
+    fi
 fi
 
 # https://stackoverflow.com/a/3953712/18954618
 echo -e "{\$DOMAIN} {
-        $([[ "$CI" == "true" ]] && echo "tls internal")
+        $([[ "$CI" == true ]] && echo "tls internal")
         @api path /rest/v1/* /auth/v1/* /realtime/v1/* /storage/v1/* /api*
 
         $([[ "$with_authelia" == true ]] && echo "@authelia path /authenticate /authenticate/*

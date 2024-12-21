@@ -309,7 +309,8 @@ anon_token=$(gen_token "$anon_payload")
 service_role_payload='{"role": "service_role", "iss": "supabase"}'
 service_role_token=$(gen_token "$service_role_payload")
 
-sed -e "s|POSTGRES_PASSWORD.*|POSTGRES_PASSWORD=$(gen_hex 16)|" \
+sed -e "3d" \
+    -e "s|POSTGRES_PASSWORD.*|POSTGRES_PASSWORD=$(gen_hex 16)|" \
     -e "s|JWT_SECRET.*|JWT_SECRET=$jwt_secret|" \
     -e "s|ANON_KEY.*|ANON_KEY=$anon_token|" \
     -e "s|SERVICE_ROLE_KEY.*|SERVICE_ROLE_KEY=$service_role_token|" \
@@ -317,16 +318,11 @@ sed -e "s|POSTGRES_PASSWORD.*|POSTGRES_PASSWORD=$(gen_hex 16)|" \
     -e "s|SUPABASE_PUBLIC_URL.*|SUPABASE_PUBLIC_URL=$domain|" \
     -e "s|ENABLE_EMAIL_AUTOCONFIRM.*|ENABLE_EMAIL_AUTOCONFIRM=$autoConfirm|" .env.example >.env
 
-format_yaml() {
-    local filepath="$1"
-    local yq_command="$2"
-
+update_yaml_file() {
     # https://github.com/mikefarah/yq/issues/465#issuecomment-2265381565
-    sed -i '/^\r\{0,1\}$/s// #BLANK_LINE/' "$filepath"
-
-    eval "$yq_command \"$filepath\""
-
-    sed -i "s/ *#BLANK_LINE//g" "$1"
+    sed -i '/^\r\{0,1\}$/s// #BLANK_LINE/' "$2"
+    yq -i "$1" "$2"
+    sed -i "s/ *#BLANK_LINE//g" "$2"
 }
 
 compose_file="docker-compose.yml"
@@ -334,11 +330,9 @@ compose_file="docker-compose.yml"
 if [[ "$with_authelia" == false ]]; then
     echo -e "\nCADDY_AUTH_USERNAME=$username\nCADDY_AUTH_PASSWORD='$password'" >>.env
 
-    format_yaml "$compose_file" "yq -i '.services.caddy.environment.CADDY_AUTH_USERNAME = \"\${CADDY_AUTH_USERNAME?:error}\" |
-           .services.caddy.environment.CADDY_AUTH_PASSWORD = \"\${CADDY_AUTH_PASSWORD?:error}\"
-           '"
+    update_yaml_file ".services.caddy.environment.CADDY_AUTH_USERNAME = \"\${CADDY_AUTH_USERNAME?:error}\" |
+           .services.caddy.environment.CADDY_AUTH_PASSWORD = \"\${CADDY_AUTH_PASSWORD?:error}\"" "$compose_file"
 else
-    authelia_config_file="./volumes/authelia/configuration.yml"
     # Dynamically update yaml path from env https://github.com/mikefarah/yq/discussions/1253
     # https://mikefarah.gitbook.io/yq/operators/style
 
@@ -355,19 +349,15 @@ else
     host="$(url-parser --url "$domain" --get host)"
     registered_domain="$(url-parser --url "$domain" --get registeredDomain)"
 
-    # UPDATE AUTHELIA CONFIGURATION FILE
-    host="$host" registered_domain="$registered_domain" authelia_url="$domain"/authenticate redirect_url="$domain" \
-        format_yaml "$authelia_config_file" \
-        "yq -i '.access_control.rules[0].domain=strenv(host) | 
+    authelia_config_file_yaml='.access_control.rules[0].domain=strenv(host) | 
             .session.cookies[0].domain=strenv(registered_domain) | 
             .session.cookies[0].authelia_url=strenv(authelia_url) |
-            .session.cookies[0].default_redirection_url=strenv(redirect_url)'"
+            .session.cookies[0].default_redirection_url=strenv(redirect_url)'
 
     echo -e "\nAUTHELIA_SESSION_SECRET=$(gen_hex 32)\nAUTHELIA_STORAGE_ENCRYPTION_KEY=$(gen_hex 32)\nAUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET=$(gen_hex 32)" \
         >>.env
 
-    # Update docker-compose.yml file
-    authelia_schema="authelia" format_yaml "$compose_file" "yq -i '.services.authelia.container_name = \"authelia\" |
+    authelia_docker_service_yaml=".services.authelia.container_name = \"authelia\" |
        .services.authelia.image = \"authelia/authelia:4.38\" |
        .services.authelia.volumes = [\"./volumes/authelia:/config\"] |
        .services.authelia.depends_on.db.condition = \"service_healthy\" |
@@ -386,14 +376,12 @@ else
        } |
        
        .services.db.environment.AUTHELIA_SCHEMA = strenv(authelia_schema) |
-       .services.db.volumes += \"./volumes/db/schema-authelia.sh:/docker-entrypoint-initdb.d/schema-authelia.sh\"
-       '"
+       .services.db.volumes += \"./volumes/db/schema-authelia.sh:/docker-entrypoint-initdb.d/schema-authelia.sh\""
 
     if [[ "$setup_redis" == true ]]; then
-        format_yaml "$authelia_config_file" "yq -i '.session.redis.host=\"redis\" | .session.redis.port=6379'"
+        authelia_config_file_yaml="${authelia_config_file_yaml}|.session.redis.host=\"redis\" | .session.redis.port=6379"
 
-        format_yaml "$compose_file" \
-            "yq -i '.services.redis.container_name=\"redis\" |
+        authelia_docker_service_yaml="${authelia_docker_service_yaml}|.services.redis.container_name=\"redis\" |
                     .services.redis.image=\"redis:7.4\" |
                     .services.redis.expose=[6379] |
                     .services.redis.healthcheck={
@@ -402,8 +390,13 @@ else
                     \"interval\" : \"1s\",
                     \"retries\" : 5
                     } |
-                    .services.authelia.depends_on.redis.condition=\"service_healthy\"'"
+                    .services.authelia.depends_on.redis.condition=\"service_healthy\""
     fi
+
+    host="$host" registered_domain="$registered_domain" authelia_url="$domain"/authenticate redirect_url="$domain" \
+        update_yaml_file "$authelia_config_file_yaml" "./volumes/authelia/configuration.yml"
+
+    authelia_schema="authelia" update_yaml_file "$authelia_docker_service_yaml" "$compose_file"
 fi
 
 # https://stackoverflow.com/a/3953712/18954618

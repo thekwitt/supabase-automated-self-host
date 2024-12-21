@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: checkout repo content
-        uses: actions/checkout@v2 # checkout the repository content to github runner
+        uses: actions/checkout@v4
 
       - name: setup python
         uses: actions/setup-python@v4
@@ -21,9 +21,9 @@ jobs:
       - name: install python packages
         run: |
           python -m pip install --upgrade pip
-          pip install -r update/requirements.txt
+          pip install -r scripts/requirements.txt
 
       - name: execute py script
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-        run: python update/check_updates.py
+        run: python scripts/check_updates.py

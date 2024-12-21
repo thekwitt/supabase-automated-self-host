@@ -63,7 +63,7 @@ if __name__ == "__main__":
 
     if discord_webhook_url is None:
         raise SystemExit(
-            "Error: discord_webhook_url env var not present",
+            "Error: DISCORD_WEBHOOK_URL env var not present",
         )
 
     current_dir = os.path.dirname(os.path.abspath(__file__))

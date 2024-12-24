@@ -18,7 +18,26 @@ defaults:
     shell: bash
 
 jobs:
+  # pre_job can't be used in reusable workflow https://github.com/fkirc/skip-duplicate-actions/issues/327
+  pre_job:
+    permissions:
+      actions: write
+      contents: read
+    # continue-on-error: true
+    runs-on: ubuntu-latest
+    outputs:
+      should_skip: ${{ steps.skip_check.outputs.should_skip }}
+    steps:
+      - id: skip_check
+        uses: fkirc/skip-duplicate-actions@v5
+        with:
+          concurrent_skipping: "same_content"
+          skip_after_successful_duplicate: "true"
+          cancel_others: "true"
+
   build-basic-auth:
+    needs: pre_job
+    if: needs.pre_job.outputs.should_skip != 'true'
     strategy:
       matrix:
         os: [ubuntu-latest]
@@ -29,6 +48,8 @@ jobs:
       repo: ${{github.event.repository.name}}
 
   build-with-authelia:
+    needs: pre_job
+    if: needs.pre_job.outputs.should_skip != 'true'
     strategy:
       matrix:
         os: [ubuntu-latest]
@@ -40,6 +61,8 @@ jobs:
       repo: ${{github.event.repository.name}}
 
   build-with-authelia-and-redis:
+    needs: pre_job
+    if: needs.pre_job.outputs.should_skip != 'true'
     strategy:
       matrix:
         os: [ubuntu-latest]

@@ -3,9 +3,15 @@ name: Test supabase docker containers
 on:
   workflow_dispatch:
   push:
-    paths:
-      - "docker/**/*"
-      - setup.sh
+    branches: [main]
+    paths: ["docker/**/*", setup.sh]
+  pull_request:
+    types: [opened, synchronize, reopened] # default behavior
+    paths: ["docker/**/*", setup.sh]
+
+concurrency:
+  group: ${{ github.ref }}
+  cancel-in-progress: true
 
 defaults:
   run:

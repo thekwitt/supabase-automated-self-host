@@ -47,7 +47,7 @@ detect_arch() {
 detect_os() {
     case $(uname | tr '[:upper:]' '[:lower:]') in
     linux*) echo "linux" ;;
-    darwin*) echo "darwin" ;;
+    # darwin*) echo "darwin" ;;
     *) echo "err" ;;
     esac
 }
@@ -55,7 +55,7 @@ detect_os() {
 os="$(detect_os)"
 arch="$(detect_arch)"
 
-if [[ "$os" == "err" ]]; then error_exit "This script only supports linux and macos"; fi
+if [[ "$os" == "err" ]]; then error_exit "This script only supports linux os"; fi
 if [[ "$arch" == "err" ]]; then error_exit "Unsupported cpu architecture"; fi
 
 with_authelia=false
@@ -133,7 +133,6 @@ echo -e "-----------------------------------------------------------------------
 format_prompt() { echo -e "${GREEN}$1${NO_COLOR}"; }
 
 confirmation_prompt() {
-    # bash variable are passed by value.
     local variable_to_update_name="$1"
     local answer=""
     read -rp "$(format_prompt "$2")" answer
@@ -152,7 +151,7 @@ confirmation_prompt() {
         ;;
     esac
 
-    # Use eval to dynamically assign the new value to the variable passed by name. This indirectly updates the variable in the caller's scope.
+    # Use eval to dynamically assign the new value to the variable name. This indirectly updates the variable in the caller's scope.
     if [ -n "$answer" ]; then eval "$variable_to_update_name=$answer"; fi
 }
 

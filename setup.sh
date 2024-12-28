@@ -233,7 +233,6 @@ while [ -z "$autoConfirm" ]; do
     elif [[ "$autoConfirm" == false ]]; then
         autoConfirm="true"
     fi
-
 done
 
 # If with_authelia, then additionally ask for email and display name
@@ -329,9 +328,10 @@ update_yaml_file() {
 }
 
 compose_file="docker-compose.yml"
+env_vars="\nCADDY_RATE_LIMIT_WINDOW='1m'\nCADDY_RATE_LIMIT_COUNT=50"
 
 if [[ "$with_authelia" == false ]]; then
-    echo -e "\nCADDY_AUTH_USERNAME=$username\nCADDY_AUTH_PASSWORD='$password'" >>.env
+    env_vars="${env_vars}\nCADDY_AUTH_USERNAME=$username\nCADDY_AUTH_PASSWORD='$password'"
 
     update_yaml_file ".services.caddy.environment.CADDY_AUTH_USERNAME = \"\${CADDY_AUTH_USERNAME?:error}\" |
            .services.caddy.environment.CADDY_AUTH_PASSWORD = \"\${CADDY_AUTH_PASSWORD?:error}\"" "$compose_file"
@@ -356,8 +356,7 @@ else
             .session.cookies[0].authelia_url=strenv(authelia_url) |
             .session.cookies[0].default_redirection_url=strenv(redirect_url)'
 
-    echo -e "\nAUTHELIA_SESSION_SECRET=$(gen_hex 32)\nAUTHELIA_STORAGE_ENCRYPTION_KEY=$(gen_hex 32)\nAUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET=$(gen_hex 32)" \
-        >>.env
+    env_vars="${env_vars}\nAUTHELIA_SESSION_SECRET=$(gen_hex 32)\nAUTHELIA_STORAGE_ENCRYPTION_KEY=$(gen_hex 32)\nAUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET=$(gen_hex 32)"
 
     authelia_docker_service_yaml=".services.authelia.container_name = \"authelia\" |
        .services.authelia.image = \"authelia/authelia:4.38\" |
@@ -401,22 +400,31 @@ else
     authelia_schema="authelia" update_yaml_file "$authelia_docker_service_yaml" "$compose_file"
 fi
 
+echo -e "$env_vars" >>.env
+
 # https://stackoverflow.com/a/3953712/18954618
 echo -e "{\$DOMAIN} {
         $([[ "$CI" == true ]] && echo "tls internal")
         @api path /rest/v1/* /auth/v1/* /realtime/v1/* /storage/v1/* /api*
 
         $([[ "$with_authelia" == true ]] && echo "@authelia path /authenticate /authenticate/*
-        handle @authelia {
+        route @authelia {
                 reverse_proxy authelia:9091
         }
         ")
 
-        handle @api {
-		    reverse_proxy @api kong:8000
+        route @api {
+            rate_limit {
+			    zone my_zone {
+				    key {remote_host}
+				    window {\$CADDY_RATE_LIMIT_WINDOW}
+				    events {\$CADDY_RATE_LIMIT_COUNT}
+			    }
+		    }
+		    reverse_proxy kong:8000
 	    }   
 
-       	handle {
+       	route {
             $([[ "$with_authelia" == false ]] && echo "basic_auth {
 			    {\$CADDY_AUTH_USERNAME} {\$CADDY_AUTH_PASSWORD}
 		    }" || echo "forward_auth authelia:9091 {
@@ -426,6 +434,10 @@ echo -e "{\$DOMAIN} {
                 }")	    	
 
 		    reverse_proxy studio:3000
+	    }
+      	
+        handle_errors 429 {
+		    respond \"You're being rate limited\"
 	    }
 }" >Caddyfile
 

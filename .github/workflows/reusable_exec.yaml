@@ -68,7 +68,8 @@ jobs:
           cd docker
           docker compose kill &> /dev/null
           cd ../../
-          sudo tar --exclude "$REPO/docker/volumes/db/data" --exclude "$REPO/docker/volumes/caddy" -czvf ~/"$ARTIFACT".tar.gz "$REPO" > /dev/null
+          sudo tar --exclude "$REPO/docker/volumes/db/data" --exclude "$REPO/docker/volumes/caddy" --exclude "$REPO/.git" \
+          -czvf ~/"$ARTIFACT".tar.gz "$REPO" > /dev/null
 
       - name: Upload generated tarball
         uses: actions/upload-artifact@v4

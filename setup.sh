@@ -319,7 +319,7 @@ update_yaml_file() {
 }
 
 compose_file="docker-compose.yml"
-env_vars="\nCADDY_RATE_LIMIT_WINDOW='1m'\nCADDY_RATE_LIMIT_COUNT=50"
+env_vars="\nCADDY_RATE_LIMIT_WINDOW='1m'\nCADDY_RATE_LIMIT_COUNT=80"
 
 if [[ "$with_authelia" == false ]]; then
     env_vars="${env_vars}\nCADDY_AUTH_USERNAME=$username\nCADDY_AUTH_PASSWORD='$password'"
@@ -435,9 +435,9 @@ echo -e "{\$DOMAIN} {
 unset password confirmPassword
 if [ -n "$SUDO_USER" ]; then chown -R "$SUDO_USER": .; fi
 
-echo -e "\n🎉 Success! The script completed successfully."
+echo -e "\n🎉 Success!"
 echo "👉 Next steps:"
-echo "1. Change into the Supabase Docker directory:"
+echo "1. Change into the docker directory:"
 echo "   cd $directory/docker"
 echo "2. Start the services with Docker Compose:"
 echo "   docker compose up -d"

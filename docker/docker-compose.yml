@@ -9,10 +9,17 @@ name: supabase
 services:
   caddy:
     container_name: caddy
-    image: caddy:2.8.4
+    build:
+      dockerfile_inline: |
+        FROM caddy:2.8.4-builder AS builder
+        RUN xcaddy build --with github.com/mholt/caddy-ratelimit
+        FROM caddy:2.8.4
+        COPY --from=builder /usr/bin/caddy /usr/bin/caddy
     restart: unless-stopped
     environment:
       DOMAIN: ${SUPABASE_PUBLIC_URL:?error}
+      CADDY_RATE_LIMIT_WINDOW: ${CADDY_RATE_LIMIT_WINDOW:?error}
+      CADDY_RATE_LIMIT_COUNT: ${CADDY_RATE_LIMIT_COUNT:?error}
     ports:
       - 80:80
       - 443:443

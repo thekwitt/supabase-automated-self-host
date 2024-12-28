@@ -93,15 +93,6 @@ fi
 
 if [ $? -ne 0 ]; then error_exit "Failed to install packages."; fi
 
-# https://stackoverflow.com/a/677212
-if ! command -v /usr/bin/docker >/dev/null; then
-    info_log "Setting up docker"
-
-    if ! curl -fsSL https://get.docker.com | sh; then error_exit "Docker installation failed. Exiting!"; fi
-else
-    info_log "docker already installed. skipping installation"
-fi
-
 githubAc="https://github.com/singh-inder"
 repoUrl="$githubAc/supabase-automated-self-host"
 directory="$(basename "$repoUrl")"
@@ -447,9 +438,9 @@ if [ -n "$SUDO_USER" ]; then chown -R "$SUDO_USER": .; fi
 echo -e "\n🎉 Success! The script completed successfully."
 echo "👉 Next steps:"
 echo "1. Change into the Supabase Docker directory:"
-echo "   cd supabase/docker"
+echo "   cd $directory/docker"
 echo "2. Start the services with Docker Compose:"
 echo "   docker compose up -d"
-echo "🚀 Your Supabase services should now be running!"
+echo "🚀 Everything should now be running!"
 
 echo -e "\n🌐 To access the dashboard over the internet, ensure your firewall allows traffic on ports 80 and 443\n"

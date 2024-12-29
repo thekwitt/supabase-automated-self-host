@@ -1,19 +1,22 @@
 # Supabase automated self host
 
-Effortlessly deploy and manage your own self-hosted instance of Supabase with this fully automated setup script.
+Effortlessly deploy your own self-hosted, dockerized instance of Supabase with this fully automated setup script. This project simplifies the entire process, including the configuration of [Caddy](https://github.com/caddyserver/caddy) as a reverse proxy and [Authelia](https://github.com/authelia/authelia) for 2-factor authentication.
 
-This project uses [Caddy](https://github.com/caddyserver/caddy) as reverse proxy with basic username & password authentication for supabase dashboard.
-Dashboard password is hashed automatically. A random secure password is generated for the Postgres database. Random `jwt_secret`, `anon_key` & `service_role` keys are automatically generated
+Note: This project isn't officially supported by Supabase. For any information regarding Supabase itself you can refer to their [docs](https://supabase.com/docs).
 
-Note: This project is not officially supported by Supabase. For any information regarding Supabase itself you can refer to the [official documentation](https://supabase.com/docs). **The script has been tested only on Linux.**
+👉 If you find this project helpful, please consider leaving a ⭐ to show your support. You can also support my work by [buying me a coffee](https://buymeacoffee.com/_inder1). Thankyou!
 
 ## Prerequisites
 
-- **A Linux Machine**: This can be a VPS or any personal computer running Linux with at least 1 GB RAM and 25 GB Disk space.
+- **A Linux Machine with docker installed**: This can be a server or any personal computer running Linux with at least 1 GB RAM and 25 GB Disk space. **The script has been tested only on Linux.**
 
-- **Domain Name**: A domain name is required **only if you want to access the dashboard over the internet**.
+- **Own Domain**: A domain name is required only if you're going to expose supabase dashboard to the internet. Otherwise you can access the dashboard locally (more on this in setup instructions)
 
 ## Setup Instructions
+
+<!-- TODO: ADD YT SCREENSHOT AND VIDEO LINK -->
+
+[![Everything Is AWESOME](https://i.sstatic.net/q3ceS.png)](https://youtu.be/StTqXEQ2l-Y "Everything Is AWESOME")
 
 1. Download `setup.sh` script
 
@@ -29,36 +32,63 @@ Note: This project is not officially supported by Supabase. For any information 
 
 3. Execute script
 
-   ```
+   👉 If you only want basic username and password authentication
+
+   ```bash
    sudo ./setup.sh
+   ```
+
+   👉 If you want 2-factor authentication setup with authelia
+
+   ```bash
+   sudo ./setup.sh --with-authelia
    ```
 
    During script execution, you'll be prompted to enter some details:
 
-   - **Enter your domain:** Enter the domain name you want to access the supabase dashboard on. This is the host caddy server will listen for.
-     For example:
+   - **Enter your domain:** Enter the domain name you want to access the supabase dashboard on. This is the host caddy server will listen for. Make sure to specify the `http/https` protocol.
+     For example: `https://supabase.example.com`
 
-     `https://supabase.example.com`
+     ⭐ If you only want to access the dashboard locally, refer to this [Discussion](https://github.com/singh-inder/supabase-automated-self-host/discussions/6)
 
-     Make sure to specify the `http/https` protocol
+   - **Enter username:** Enter the username you want to use for authentication.
 
-     > If you only want to access the dashboard locally, enter `http://localhost`. Make sure port 80 is not being used by some other app.
+   - **Enter password:** Set a secure password.
 
-   - **Enter supabase dashboard username:** Provide the username you want to use for accessing the Supabase dashboard.
+   - **Do you want to send confirmation emails to register users? `[y/n]`:**
 
-   - **Enter supabase dashboard password:** Set a secure password for accessing the dashboard
+     - If you enter "yes", Supabase will send a verification email to every new user who registers. You'll need to set up your own SMTP server and enter the config in `.env` file. You can read more about it [here](https://supabase.com/docs/guides/self-hosting/docker#configuring-an-email-server).
 
-   - **Do you want to send confirmation emails to register users?:** Answer `[y/n]` based on your preference.
+     - If you enter "no", users will be able to signup with their email & password without any email verification. If you're only testing things out or don't want to send any verification/password-reset emails, enter "no"
 
-     - If you choose "yes", You'll need to set up your own SMTP server and enter the config in `.env` file. You can read more about it [here](https://supabase.com/docs/guides/self-hosting/docker#configuring-an-email-server).
+   The following additional prompts have to be answered only if you've enabled `--with-authelia` flag:
 
-     - If you choose "no", then users will be able to signup with their email & password without any email verification.
+   - **Enter email:** This email is used by authelia for setting up 2-factor auth / reset password flow. If you're not going to setup an SMTP server for emails, you can enter any email here. (When not using SMTP server, you can easily view codes sent by authelia in `volumes/authelia/notifications.txt`)
 
-After script completes successfully, cd into `supabase/docker` directory and run `docker compose up -d`. Wait for containers to be healthy and you're good to go. To access dashboard outside your network, make sure that your firewall allows traffic on port 80 and 443. I'd recommend to not use ufw as ports exposed by docker containers bypass firewall rules. Read more about it [Here](https://docs.docker.com/engine/install/ubuntu/#firewall-limitations).
+   - **Enter Display Name:** Used by authelia [here](https://gist.github.com/user-attachments/assets/a7a4c0b8-920e-4b61-9bb5-1cae26d5bbe9).
+
+   - **Do you want to setup redis with authelia? [y/n]:** By default, authelia stores session data in memory. In layman terms: If authelia container dies for some reason every user will be logged out. **If you're going to production, Authelia team [recommends](https://www.authelia.com/configuration/session/redis/) to use redis to store session data**.
+
+Thats it!
+
+After script completes successfully, cd into `supabase/docker` directory and run `docker compose up -d`. Wait for containers to be healthy and you're good to go. To access dashboard outside your network, make sure that your firewall allows traffic on port 80 and 443.
+
+## Rate limits
+
+- Supabase self hosted instance api routes don't have any rate limits applied. That's why caddy is setup with [caddy-ratelimit](https://github.com/mholt/caddy-ratelimit) module. Rate limits are only applied on api routes. **By default, 80 requests/min are allowed from an ip address**.
+- You can change it acc. to your needs. In `docker/.env` file, update `CADDY_RATE_LIMIT_WINDOW` to update the time window and `CADDY_RATE_LIMIT_COUNT` to update the number of requests.
+
+- You can take a look at these [examples](https://caddyserver.com/docs/modules/http.handlers.rate_limit#rate_limits/window) for supported time units for `CADDY_RATE_LIMIT_WINDOW`
 
 ## Where to ask for help?
 
-Stop by my [Discord server](https://discord.gg/Pbpm7NsVjG) anytime.
+- Open a new issue
+- [X/Twitter](https://x.com/_inder1)
+- or stop by my [Discord server](https://discord.gg/Pbpm7NsVjG) anytime.
+
+## License
+
+This project is licensed under the [Apache 2.0 License](LICENSE).
 
 ## Contributions
 

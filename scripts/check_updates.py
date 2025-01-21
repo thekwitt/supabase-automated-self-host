@@ -58,7 +58,7 @@ def get_files(filePath: str, list: List[str]):
             get_files(os.path.join(filePath, item), list)
 
 
-if __name__ == "__main__":
+def main():
     discord_webhook_url = os.environ.get("DISCORD_WEBHOOK_URL")
 
     if discord_webhook_url is None:
@@ -166,3 +166,7 @@ if __name__ == "__main__":
         raise SystemExit(f"Error: {err}")
     finally:
         file.close()
+
+
+if __name__ == "__main__":
+    main()

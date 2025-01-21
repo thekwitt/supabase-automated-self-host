@@ -51,7 +51,7 @@ def download_file(repo: Repository, folder: str, out: str):
 
 
 def get_files(filePath: str, list: List[str]):
-    for item in glob.glob(f"{filePath}/*"):
+    for item in glob.glob(f"{filePath}/*", include_hidden=True):
         if os.path.isfile(item):
             list.append(item)
         elif os.path.isdir(item):

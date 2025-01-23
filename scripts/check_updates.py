@@ -51,14 +51,14 @@ def download_file(repo: Repository, folder: str, out: str):
 
 
 def get_files(filePath: str, list: List[str]):
-    for item in glob.glob(f"{filePath}/*"):
+    for item in glob.glob(f"{filePath}/*", include_hidden=True):
         if os.path.isfile(item):
             list.append(item)
         elif os.path.isdir(item):
             get_files(os.path.join(filePath, item), list)
 
 
-if __name__ == "__main__":
+def main():
     discord_webhook_url = os.environ.get("DISCORD_WEBHOOK_URL")
 
     if discord_webhook_url is None:
@@ -166,3 +166,7 @@ if __name__ == "__main__":
         raise SystemExit(f"Error: {err}")
     finally:
         file.close()
+
+
+if __name__ == "__main__":
+    main()

@@ -75,10 +75,7 @@ After script completes successfully, cd into `supabase/docker` directory and run
 
 ## Rate limits
 
-- Supabase self hosted instance api routes don't have any rate limits applied. That's why caddy is setup with [caddy-ratelimit](https://github.com/mholt/caddy-ratelimit) module. Rate limits are only applied on api routes. **By default, 80 requests/min are allowed from an ip address**.
-- You can change it acc. to your needs. In `docker/.env` file, update `CADDY_RATE_LIMIT_WINDOW` to update the time window and `CADDY_RATE_LIMIT_COUNT` to update the number of requests.
-
-- You can take a look at these [examples](https://caddyserver.com/docs/modules/http.handlers.rate_limit#rate_limits/window) for supported time units for `CADDY_RATE_LIMIT_WINDOW`
+By default, Supabase api routes don't have any rate-limits on the self hosted instance. You can easily rate-limit api routes using caddy server by following the steps [HERE](https://github.com/singh-inder/supabase-automated-self-host/discussions/19)
 
 ## Where to ask for help?
 

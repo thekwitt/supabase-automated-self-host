@@ -8,15 +8,15 @@ Note: This project isn't officially supported by Supabase. For any information r
 
 ## Prerequisites
 
-- **A Linux Machine with docker installed**: This can be a server or any personal computer running Linux with at least 1 GB RAM and 25 GB Disk space. **The script has been tested only on Linux.**
+- **A Linux Machine with docker installed**: This can be a server or any personal computer running Linux with at least 1 GB RAM and 25 GB Disk space. **The script has been tested only on Linux/WSL.**
 
 - **Own Domain**: A domain name is required only if you're going to expose supabase dashboard to the internet. Otherwise you can access the dashboard locally (more on this in setup instructions)
 
 ## Setup Instructions
 
-<!-- TODO: ADD YT SCREENSHOT AND VIDEO LINK -->
+If you prefer a visual guide, check out this video where I deploy a self hosted supabase instance with Authelia for 2FA to AWS in a few minutes:
 
-<!-- [![Everything Is AWESOME](https://i.sstatic.net/q3ceS.png)](https://youtu.be/StTqXEQ2l-Y "Everything Is AWESOME") -->
+[![Self-Host Supabase with 2FA and Caddy](https://imgur.com/mCM0ZRG.jpeg)](https://www.youtube.com/watch?v=XhTBCGb0rTM "Self-Host Supabase with 2FA and Caddy - Just Run One Script!")
 
 1. Download `setup.sh` script
 

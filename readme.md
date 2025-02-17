@@ -10,7 +10,7 @@ Note: This project isn't officially supported by Supabase. For any information r
 
 - **A Linux Machine with docker installed**: This can be a server or any personal computer running Linux with at least 1 GB RAM and 25 GB Disk space. **The script has been tested only on Linux/WSL.**
 
-- **Own Domain**: A domain name is required only if you're going to expose supabase dashboard to the internet. Otherwise you can access the dashboard locally (more on this in setup instructions)
+- **Own Domain**: A domain name is required only if you're going to expose supabase services to the internet. Otherwise you can run supabase locally (more on this in setup instructions)
 
 ## Setup Instructions
 
@@ -49,7 +49,7 @@ If you prefer a visual guide, check out this video where I deploy a self hosted 
    - **Enter your domain:** Enter the domain name you want to access the supabase dashboard on. This is the host caddy server will listen for. Make sure to specify the `http/https` protocol.
      For example: `https://supabase.example.com`
 
-     ⭐ If you only want to access the dashboard locally, refer to this [Discussion](https://github.com/singh-inder/supabase-automated-self-host/discussions/6)
+     ⭐ If you only want to access the dashboard locally, refer to this [Guide](https://github.com/singh-inder/supabase-automated-self-host/discussions/6)
 
    - **Enter username:** Enter the username you want to use for authentication.
 
@@ -63,9 +63,9 @@ If you prefer a visual guide, check out this video where I deploy a self hosted 
 
    The following additional prompts have to be answered only if you've enabled `--with-authelia` flag:
 
-   - **Enter email:** This email is used by authelia for setting up 2-factor auth / reset password flow. If you're not going to setup an SMTP server for emails, you can enter any email here. (When not using SMTP server, you can easily view codes sent by authelia in `volumes/authelia/notifications.txt`)
+   - **Enter email:** This email is used by authelia for setting up 2-factor auth / reset password flow. If you're not going to setup an SMTP server for emails, you can enter any email here. (When not using SMTP server, you can easily view codes sent by authelia in `docker/volumes/authelia/notifications.txt`)
 
-   - **Enter Display Name:** Used by authelia [here](https://gist.github.com/user-attachments/assets/a7a4c0b8-920e-4b61-9bb5-1cae26d5bbe9).
+   - **Enter Display Name:** Used by authelia in emails and [dashboard](https://gist.github.com/user-attachments/assets/a7a4c0b8-920e-4b61-9bb5-1cae26d5bbe9).
 
    - **Do you want to setup redis with authelia? [y/n]:** By default, authelia stores session data in memory. In layman terms: If authelia container dies for some reason every user will be logged out. **If you're going to production, Authelia team [recommends](https://www.authelia.com/configuration/session/redis/) to use redis to store session data**.
 

@@ -77,6 +77,18 @@ After script completes successfully, cd into `supabase/docker` directory and run
 
 By default, Supabase api routes don't have any rate-limits on the self hosted instance. You can easily rate-limit api routes using caddy server by following the steps [HERE](https://github.com/singh-inder/supabase-automated-self-host/discussions/19)
 
+## supabase-automated-self-host vs. coolify: Key Differences
+
+- Coolify needs at least 2 GB RAM and 30 GB of disk space. Supabase itself only needs 1 GB ram and 25 GB disk space to start.
+
+- With coolify, you're only getting basic username password auth. No 2FA.
+
+- Coolify relies on Kong API Gateway by default, without a separate reverse proxy. This project configures Caddy as a reverse proxy, allowing easy rate-limiting. Support for multiple reverse proxies is also planned.
+
+- This script is definitely going to be faster than setting up through Coolify.
+
+- Personal bias here, I can't stand GUIs. With this, you get full control from the terminal, no clicking around, just a script that gets it done.
+
 ## Where to ask for help?
 
 - Open a new issue

@@ -528,7 +528,7 @@ services:
       MINIO_ROOT_USER: ${MINIO_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD}
     volumes:
-      - /mnt/databases/street_cred/volumes/storage/minio-data:/data
+      - ./volumes/storage:/data:z
     command: server /data --console-address ":9090"
 
   minio-createbucket:
@@ -543,7 +543,7 @@ services:
     entrypoint: >
       /bin/sh -c "
       /usr/bin/mc alias set minio http://minio:9000 ${MINIO_USER} ${MINIO_PASSWORD};
-      /usr/bin/mc mb --ignore-existing minio/street-cred;
+      /usr/bin/mc mb --ignore-existing minio;
       exit 0;
       "
 

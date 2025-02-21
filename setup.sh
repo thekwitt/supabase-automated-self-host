@@ -445,13 +445,6 @@ echo -e "{\$DOMAIN} {
 
             reverse_proxy studio:3000
         }
-      
-
-        # Allow special characters in headers
-        header_up {
-            -Server
-            -X-Powered-By
-        }
 
         # Allow any size file to be uploaded
         request_body {

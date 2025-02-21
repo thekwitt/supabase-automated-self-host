@@ -334,7 +334,6 @@ sed -e "3d" \
     -e "s|SUPABASE_PUBLIC_URL.*|SUPABASE_PUBLIC_URL=$domain|" \
     -e "s|MINIO_USER.*|MINIO_USER=$username|" \
     -e "s|MINIO_PASSWORD.*|MINIO_PASSWORD=$password|" \
-    -e "s|MINIO_DOMAIN.*|MINIO_DOMAIN=$s3_domain|" \
     -e "s|ENABLE_EMAIL_AUTOCONFIRM.*|ENABLE_EMAIL_AUTOCONFIRM=$autoConfirm|" .env.example >.env
 
 update_yaml_file() {
@@ -465,7 +464,7 @@ echo -e "{\$DOMAIN} {
             buffer_requests off
             buffer_responses off
         }
-        
+
         header -server
 }
 

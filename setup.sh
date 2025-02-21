@@ -181,6 +181,27 @@ while [ -z "$domain" ]; do
     fi
 done
 
+s3_domain=""
+while [ -z "$s3_domain" ]; do
+    if [ "$CI" == true ]; then
+        s3_domain="https://s3.example.com"
+    else
+        read -rp "$(format_prompt "Enter your S3 domain:") " s3_domain
+    fi
+
+    if ! protocol="$(url-parser --url "$s3_domain" --get scheme 2>/dev/null)"; then
+        error_log "Couldn't extract protocol. Please check the S3 url you entered.\n"
+        s3_domain=""
+        continue
+    fi
+
+    if [[ "$protocol" != "http" && "$protocol" != "https" ]]; then
+        error_log "S3 url protocol must be http or https\n"
+        s3_domain=""
+    fi
+done
+
+
 username=""
 if [[ "$CI" == true ]]; then username="inder"; fi
 
@@ -313,6 +334,7 @@ sed -e "3d" \
     -e "s|SUPABASE_PUBLIC_URL.*|SUPABASE_PUBLIC_URL=$domain|" \
     -e "s|MINIO_USER.*|MINIO_USER=$username|" \
     -e "s|MINIO_PASSWORD.*|MINIO_PASSWORD=$password|" \
+    -e "s|MINIO_DOMAIN.*|MINIO_DOMAIN=$s3_domain|" \
     -e "s|ENABLE_EMAIL_AUTOCONFIRM.*|ENABLE_EMAIL_AUTOCONFIRM=$autoConfirm|" .env.example >.env
 
 update_yaml_file() {
@@ -401,7 +423,7 @@ echo -e "$env_vars" >>.env
 # https://stackoverflow.com/a/3953712/18954618
 echo -e "{\$DOMAIN} {
         $([[ "$CI" == true ]] && echo "tls internal")
-        @api path /rest/v1/* /auth/v1/* /realtime/v1/* /storage/v1/* /functions/v1/* /api*
+        @api path /rest/v1/* /auth/v1/* /realtime/v1/* /storage/v1/* /functions/v1/* /api* /minio*
 
         $([[ "$with_authelia" == true ]] && echo "@authelia path /authenticate /authenticate/*
         handle @authelia {
@@ -410,23 +432,43 @@ echo -e "{\$DOMAIN} {
         ")
 
         handle @api {
-		    reverse_proxy kong:8000
-	    }   
+            reverse_proxy kong:8000
+        }   
 
-       	handle {
+        handle {
             $([[ "$with_authelia" == false ]] && echo "basic_auth {
-			    {\$CADDY_AUTH_USERNAME} {\$CADDY_AUTH_PASSWORD}
-		    }" || echo "forward_auth authelia:9091 {
+                {\$CADDY_AUTH_USERNAME} {\$CADDY_AUTH_PASSWORD}
+            }" || echo "forward_auth authelia:9091 {
                         uri /api/authz/forward-auth
 
                         copy_headers Remote-User Remote-Groups Remote-Name Remote-Email
-                }")	    	
+                }")     
 
-		    reverse_proxy studio:3000
-	    }
-      	
+            reverse_proxy studio:3000
+        }
+      
+
+        # Allow special characters in headers
+        header_up {
+            -Server
+            -X-Powered-By
+        }
+
+        # Allow any size file to be uploaded
+        request_body {
+            max_size 0
+        }
+
+        # Disable buffering
+        reverse_proxy {
+            flush_interval -1
+            buffer_requests off
+            buffer_responses off
+        }
+        
         header -server
 }
+
 
 " >Caddyfile
 

@@ -311,10 +311,9 @@ sed -e "3d" \
     -e "s|VAULT_ENC_KEY.*|VAULT_ENC_KEY=$(gen_hex 16)|" \
     -e "s|API_EXTERNAL_URL.*|API_EXTERNAL_URL=$domain/api|" \
     -e "s|SUPABASE_PUBLIC_URL.*|SUPABASE_PUBLIC_URL=$domain|" \
-    -e "s|ENABLE_EMAIL_AUTOCONFIRM.*|ENABLE_EMAIL_AUTOCONFIRM=$autoConfirm|" .env.example >.env
     -e "s|MINIO_USER.*|MINIO_USER=$username|" \
-    -e "s|MINIO_PASSWORD.*|MINIO_PASSWORD=$password|" \    
-
+    -e "s|MINIO_PASSWORD.*|MINIO_PASSWORD=$password|" \
+    -e "s|ENABLE_EMAIL_AUTOCONFIRM.*|ENABLE_EMAIL_AUTOCONFIRM=$autoConfirm|" .env.example >.env
 
 update_yaml_file() {
     # https://github.com/mikefarah/yq/issues/465#issuecomment-2265381565

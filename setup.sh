@@ -431,7 +431,9 @@ echo -e "{\$DOMAIN} {
         ")
 
         handle @api {
-            reverse_proxy kong:8000
+            reverse_proxy kong:8000 {
+                flush_interval -1
+            }
         }   
 
         handle {
@@ -454,8 +456,6 @@ echo -e "{\$DOMAIN} {
         # Disable buffering
         reverse_proxy {
             flush_interval -1
-            buffer_requests off
-            buffer_responses off
         }
 
         header -server

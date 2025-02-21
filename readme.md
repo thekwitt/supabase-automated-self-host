@@ -21,7 +21,7 @@ If you prefer a visual guide, check out this video where I deploy a self hosted 
 1. Download `setup.sh` script
 
    ```bash
-    curl -o setup.sh https://raw.githubusercontent.com/singh-inder/supabase-automated-self-host/refs/heads/main/setup.sh
+    curl -o setup.sh https://raw.githubusercontent.com/thekwitt/supabase-automated-self-host/refs/heads/main/setup.sh
    ```
 
 2. Make script executable

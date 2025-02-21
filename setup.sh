@@ -93,7 +93,7 @@ fi
 
 if [ $? -ne 0 ]; then error_exit "Failed to install packages."; fi
 
-githubAc="https://github.com/singh-inder"
+githubAc="https://github.com/thekwitt"
 repoUrl="$githubAc/supabase-automated-self-host"
 directory="$(basename "$repoUrl")"
 

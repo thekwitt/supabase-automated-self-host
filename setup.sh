@@ -247,6 +247,9 @@ while [ -z "$autoConfirm" ]; do
     fi
 done
 
+$minio_pass = $password
+$minio_user = $username
+
 # If with_authelia, then additionally ask for email and display name
 if [[ "$with_authelia" == true ]]; then
     email=""
@@ -332,7 +335,10 @@ sed -e "3d" \
     -e "s|VAULT_ENC_KEY.*|VAULT_ENC_KEY=$(gen_hex 16)|" \
     -e "s|API_EXTERNAL_URL.*|API_EXTERNAL_URL=$domain/api|" \
     -e "s|SUPABASE_PUBLIC_URL.*|SUPABASE_PUBLIC_URL=$domain|" \
-    -e "s|ENABLE_EMAIL_AUTOCONFIRM.*|ENABLE_EMAIL_AUTOCONFIRM=$autoConfirm|" .env.example >.env
+    -e "s|ENABLE_EMAIL_AUTOCONFIRM.*|ENABLE_EMAIL_AUTOCONFIRM=$autoConfirm|" \
+    -e "s|MINIO_USER.*|MINIO_USER=$minio_user|" \
+    -e "s|MINIO_PASSWORD.*|MINIO_PASSWORD=$minio_pass|" .env.example >.env
+
 
 update_yaml_file() {
     # https://github.com/mikefarah/yq/issues/465#issuecomment-2265381565

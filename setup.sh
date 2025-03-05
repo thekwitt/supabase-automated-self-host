@@ -436,10 +436,16 @@ echo -e "{\$DOMAIN} {
 
         handle @api {
             reverse_proxy kong:8000 {
-                flush_interval -1
-                request_body {
-                    max_size 0
+                flush_interval 100ms
+                transport http {
+                    keepalive 60s
+                    read_buffer 64KB
+                    write_buffer 64KB
                 }
+            }
+
+            request_body {
+                max_size 100MB
             }
         }   
 
@@ -453,16 +459,6 @@ echo -e "{\$DOMAIN} {
                 }")     
 
             reverse_proxy studio:3000
-        }
-
-        # Allow any size file to be uploaded
-        request_body {
-            max_size 0
-        }
-
-        # Disable buffering
-        reverse_proxy {
-            flush_interval -1
         }
 
         header -server

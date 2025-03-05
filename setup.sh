@@ -247,8 +247,8 @@ while [ -z "$autoConfirm" ]; do
     fi
 done
 
-$minio_pass = $password
-$minio_user = $username
+minio_pass=$password
+minio_user=$username
 
 # If with_authelia, then additionally ask for email and display name
 if [[ "$with_authelia" == true ]]; then
